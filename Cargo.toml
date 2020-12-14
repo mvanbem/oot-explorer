@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "oot-explorer-core",
+    "oot-explorer-demo",
+    "oot-explorer-web",
+    "scoped-owner",
+]

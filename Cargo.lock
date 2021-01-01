@@ -81,6 +81,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "oot-explorer-expr"
+version = "0.1.0"
+dependencies = [
+ "num-traits",
+ "slotmap",
+]
+
+[[package]]
+name = "oot-explorer-gl"
+version = "0.1.0"
+dependencies = [
+ "byteorder",
+ "num-traits",
+ "oot-explorer-core",
+ "oot-explorer-expr",
+]
+
+[[package]]
 name = "oot-explorer-web"
 version = "0.1.0"
 dependencies = [
@@ -88,6 +106,7 @@ dependencies = [
  "js-sys",
  "num-traits",
  "oot-explorer-core",
+ "oot-explorer-gl",
  "scoped-owner",
  "slotmap",
  "wasm-bindgen",

@@ -6,13 +6,11 @@ use oot_explorer_core::room::Room;
 use oot_explorer_core::scene::Scene;
 use oot_explorer_core::segment::{Segment, SegmentCtx};
 use oot_explorer_core::versions;
+use oot_explorer_gl::display_list_interpreter::DisplayListInterpreter;
 use scoped_owner::ScopedOwner;
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-
-mod expr;
-mod gl;
 
 fn new_array_buffer(data: &[u8]) -> js_sys::ArrayBuffer {
     let start = &data[0] as *const u8 as usize;
@@ -41,7 +39,7 @@ pub fn process_scene(rom_data: Box<[u8]>, scene_index: usize) -> js_sys::Array {
     let rom = Rom::new(&rom_data);
     ScopedOwner::with_scope(|scope| {
         let mut fs = LazyFileSystem::new(rom, versions::oot_ntsc_10::FILE_TABLE_ROM_ADDR);
-        let mut dlist_interp = gl::DisplayListInterpreter::new();
+        let mut dlist_interp = DisplayListInterpreter::new();
 
         let scene = versions::oot_ntsc_10::get_scene_table(scope, &mut fs)
             .get(scene_index)
@@ -79,25 +77,11 @@ pub fn process_scene(rom_data: Box<[u8]>, scene_index: usize) -> js_sys::Array {
     })
 }
 
-pub fn process_all_scenes(rom_data: &[u8]) {
-    let rom = Rom::new(rom_data);
-    ScopedOwner::with_scope(|scope| {
-        let mut fs = LazyFileSystem::new(rom, versions::oot_ntsc_10::FILE_TABLE_ROM_ADDR);
-        let mut dlist_interp = gl::DisplayListInterpreter::new();
-
-        for entry in versions::oot_ntsc_10::get_scene_table(scope, &mut fs) {
-            let scene = entry.scene(scope, &mut fs);
-            examine_scene(scope, &mut fs, scene, &mut dlist_interp);
-            dlist_interp.clear_batches();
-        }
-    })
-}
-
 fn examine_scene<'a>(
     scope: &'a ScopedOwner,
     fs: &mut LazyFileSystem<'a>,
     scene: Scene<'a>,
-    dlist_interp: &mut gl::DisplayListInterpreter,
+    dlist_interp: &mut DisplayListInterpreter,
 ) {
     let ctx = {
         let mut ctx = SegmentCtx::new();
@@ -119,7 +103,7 @@ fn examine_room<'a>(
     _fs: &mut LazyFileSystem<'a>,
     scene: Scene<'a>,
     room: Room<'a>,
-    dlist_interp: &mut gl::DisplayListInterpreter,
+    dlist_interp: &mut DisplayListInterpreter,
 ) {
     let cpu_ctx = {
         let mut ctx = SegmentCtx::new();
@@ -150,10 +134,10 @@ fn examine_room<'a>(
             match header.mesh(&cpu_ctx).variant() {
                 MeshVariant::Simple(mesh) => {
                     for entry in mesh.entries(&cpu_ctx) {
-                        if let Some(dlist) = entry.opaque_display_list(&cpu_ctx) {
+                        if let Ok(Some(dlist)) = entry.opaque_display_list(&cpu_ctx) {
                             dlist_interp.interpret(&rsp_ctx, dlist);
                         }
-                        if let Some(dlist) = entry.translucent_display_list(&cpu_ctx) {
+                        if let Ok(Some(dlist)) = entry.translucent_display_list(&cpu_ctx) {
                             dlist_interp.interpret(&rsp_ctx, dlist);
                         }
                     }

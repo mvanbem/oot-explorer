@@ -107,13 +107,21 @@ impl<'a> SimpleMeshEntry<'a> {
         }
     }
 
-    pub fn opaque_display_list(self, segment_ctx: &SegmentCtx<'a>) -> Option<DisplayList<'a>> {
+    pub fn opaque_display_list(
+        self,
+        segment_ctx: &SegmentCtx<'a>,
+    ) -> Result<Option<DisplayList<'a>>, SegmentResolveError> {
         self.opaque_display_list_ptr()
-            .map(|ptr| DisplayList::new(segment_ctx.resolve(ptr).unwrap()))
+            .map(|ptr| segment_ctx.resolve(ptr).map(|addr| DisplayList::new(addr)))
+            .transpose()
     }
-    pub fn translucent_display_list(self, segment_ctx: &SegmentCtx<'a>) -> Option<DisplayList<'a>> {
+    pub fn translucent_display_list(
+        self,
+        segment_ctx: &SegmentCtx<'a>,
+    ) -> Result<Option<DisplayList<'a>>, SegmentResolveError> {
         self.translucent_display_list_ptr()
-            .map(|ptr| DisplayList::new(segment_ctx.resolve(ptr).unwrap()))
+            .map(|ptr| segment_ctx.resolve(ptr).map(|addr| DisplayList::new(addr)))
+            .transpose()
     }
 }
 

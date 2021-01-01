@@ -1,5 +1,5 @@
 [package]
-name = "oot-explorer-demo"
+name = "oot-explorer-gl"
 version = "0.1.0"
 authors = ["Michael VanBemmel <michael.vanbemmel@gmail.com>"]
 edition = "2018"
@@ -8,5 +8,7 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+byteorder = "1"
+num-traits = "0.2"
 oot-explorer-core = { path = "../oot-explorer-core" }
-scoped-owner = { path = "../scoped-owner" }
+oot-explorer-expr = { path = "../oot-explorer-expr" }

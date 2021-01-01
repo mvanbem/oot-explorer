@@ -122,7 +122,7 @@ pub enum Instruction {
         start_s: Qu10_2,
         start_t: Qu10_2,
         tile: u8,
-        end_s: u16,
+        texels: u16,
         dxt: Qu1_11,
     },
     // 0xf5
@@ -261,7 +261,7 @@ impl Instruction {
                 start_s: Qu10_2(((u32_a >> 12) & 0x0fff) as u16),
                 start_t: Qu10_2((u32_a & 0x0fff) as u16),
                 tile: ((u32_b >> 24) & 0x07) as u8,
-                end_s: ((u32_b >> 12) & 0x0fff) as u16,
+                texels: ((u32_b >> 12) & 0x0fff) as u16 + 1,
                 dxt: Qu1_11((u32_b & 0x0fff) as u16),
             },
             0xf5 => Instruction::SetTile {

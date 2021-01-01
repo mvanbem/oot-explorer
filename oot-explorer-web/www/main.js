@@ -103,55 +103,52 @@ let RomStorage = (() => {
       }
       return this.dbPromise;
     }
-    load() {
+    async load() {
       Status.show('Checking IndexedDB for stored ROM...');
-      return this.getDatabase()
-        .then(db => new Promise((resolve, reject) => {
-          let txn = db.transaction([OBJECT_STORE_NAME], 'readwrite');
-          txn.addEventListener('complete', () => resolve(req.result || null));
-          txn.addEventListener('error', () => reject(txn.errorCode));
-          txn.addEventListener('abort', () => reject(new Error('transaction aborted')));
-          let req = txn.objectStore(OBJECT_STORE_NAME).get(KEY);
-        }))
-        .then(rom => {
-          if (rom === null) {
-            return null;
-          }
-          if (!this.isValid(rom)) {
-            console.log('invalid rom stored; ignoring it');
-            return null;
-          }
-          return rom;
-        });
+      const db = await this.getDatabase();
+      const rom = await new Promise((resolve, reject) => {
+        let txn = db.transaction([OBJECT_STORE_NAME], 'readwrite');
+        txn.addEventListener('complete', () => resolve(req.result || null));
+        txn.addEventListener('error', () => reject(txn.errorCode));
+        txn.addEventListener('abort', () => reject(new Error('transaction aborted')));
+        let req = txn.objectStore(OBJECT_STORE_NAME).get(KEY);
+      });
+      if (rom === null) {
+        return null;
+      }
+      if (!this.isValid(rom)) {
+        console.log('invalid rom stored; ignoring it');
+        return null;
+      }
+      return rom;
     }
     // [rom] is expected to be an ArrayBuffer
-    store(rom) {
+    async store(rom) {
       let messages = [];
       if (!this.isValid(rom, messages)) {
-        return new Promise((resolve, reject) => reject(
-          new Error('ROM failed validation: ' + messages.join('; '))));
+        throw new Error('ROM failed validation: ' + messages.join('; '));
       }
 
       Status.show('Storing ROM to IndexedDB...');
-      return this.getDatabase()
-        .then(db => new Promise((resolve, reject) => {
-          let txn = db.transaction([OBJECT_STORE_NAME], 'readwrite');
-          txn.addEventListener('complete', () => resolve());
-          txn.addEventListener('error', () => reject(txn.errorCode));
-          txn.addEventListener('abort', () => reject(new Error('transaction aborted')));
-          txn.objectStore(OBJECT_STORE_NAME).put(rom, KEY);
-        }));
+      const db = await this.getDatabase();
+      return await new Promise((resolve, reject) => {
+        let txn = db.transaction([OBJECT_STORE_NAME], 'readwrite');
+        txn.addEventListener('complete', () => resolve());
+        txn.addEventListener('error', () => reject(txn.errorCode));
+        txn.addEventListener('abort', () => reject(new Error('transaction aborted')));
+        txn.objectStore(OBJECT_STORE_NAME).put(rom, KEY);
+      });
     }
-    clear() {
+    async clear() {
       Status.show('Clearing IndexedDB...');
-      return this.getDatabase()
-        .then(db => new Promise((resolve, reject) => {
-          let txn = db.transaction([OBJECT_STORE_NAME], 'readwrite');
-          txn.addEventListener('complete', () => resolve());
-          txn.addEventListener('error', () => reject(txn.errorCode));
-          txn.addEventListener('abort', () => reject(new Error('transaction aborted')));
-          txn.objectStore(OBJECT_STORE_NAME).delete(KEY);
-        }));
+      const db = await this.getDatabase();
+      return await new Promise((resolve, reject) => {
+        let txn = db.transaction([OBJECT_STORE_NAME], 'readwrite');
+        txn.addEventListener('complete', () => resolve());
+        txn.addEventListener('error', () => reject(txn.errorCode));
+        txn.addEventListener('abort', () => reject(new Error('transaction aborted')));
+        txn.objectStore(OBJECT_STORE_NAME).delete(KEY);
+      });
     }
     isValid(rom, outMessages) {
       let header = new RomHeader(rom);
@@ -299,20 +296,6 @@ void main() {
 
   v_color = vertexColor;
   v_shade = vertexColor;
-}
-`;
-
-const FRAGMENT_SHADER_SOURCE = `#version 300 es
-
-precision highp float;
-precision highp int;
-
-in vec4 v_shade;
-
-layout(location = 0) out vec4 fragColor;
-
-void main() {
-  fragColor = v_shade;
 }
 `;
 

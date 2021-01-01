@@ -2,6 +2,8 @@
 members = [
     "oot-explorer-core",
     "oot-explorer-demo",
+    "oot-explorer-expr",
+    "oot-explorer-gl",
     "oot-explorer-web",
     "scoped-owner",
 ]

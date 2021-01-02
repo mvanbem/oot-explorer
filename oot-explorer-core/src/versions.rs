@@ -74,7 +74,7 @@ pub mod oot_ntsc_10 {
         pub fn scene(self, scope: &'a ScopedOwner, fs: &mut LazyFileSystem<'a>) -> Scene<'a> {
             Scene::new(
                 self.scene_start(),
-                fs.get_virtual_slice(scope, self.scene_range()),
+                fs.get_virtual_slice_or_die(scope, self.scene_range()),
             )
         }
         pub fn title_card_range(self) -> Option<Range<VromAddr>> {

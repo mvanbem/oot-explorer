@@ -59,7 +59,7 @@ impl DisplayListInterpreter {
                 geometry_mode: GeometryMode::default(),
                 rdp_half_1: None,
                 rdp_other_mode: RdpOtherMode {
-                    hi: OtherModeH::CYC_2CYCLE,
+                    hi: OtherModeH::CYC_2CYCLE | OtherModeH::TT_RGBA16,
                 },
                 combiner: None,
                 texture_src: None,

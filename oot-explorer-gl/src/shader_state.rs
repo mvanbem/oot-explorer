@@ -77,12 +77,18 @@ void main() {{
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct TextureDescriptor {
-    // TODO: Way more fields. Must consider format transformation while loading, plus tile
-    // attributes.
     pub source: TmemSource,
+    pub palette_source: PaletteSource,
     pub render_format: TextureFormat,
     pub render_depth: TextureDepth,
     pub render_width: usize,
     pub render_height: usize,
     pub render_stride: usize,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum PaletteSource {
+    None,
+    Rgba(TmemSource),
+    Ia(TmemSource),
 }

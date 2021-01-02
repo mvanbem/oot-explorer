@@ -905,7 +905,7 @@ impl<'a> RoomListEntry<'a> {
     pub fn room(self, scope: &'a ScopedOwner, fs: &mut LazyFileSystem<'a>) -> Room<'a> {
         Room::new(
             self.start(),
-            fs.get_virtual_slice(scope, self.start()..self.end()),
+            fs.get_virtual_slice_or_die(scope, self.start()..self.end()),
         )
     }
 }

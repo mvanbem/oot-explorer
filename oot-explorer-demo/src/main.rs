@@ -1,4 +1,4 @@
-use oot_explorer_core::fs::LazyFileSystem;
+use oot_explorer_core::fs::{LazyFileSystem, VirtualSliceError};
 use oot_explorer_core::gbi::{DisplayList, Qu1_11, TextureDepth, TextureFormat};
 use oot_explorer_core::header::{MeshHeader, RoomHeader, SceneHeader};
 use oot_explorer_core::mesh::MeshVariant;
@@ -9,7 +9,7 @@ use oot_explorer_core::segment::{Segment, SegmentCtx, SegmentResolveError};
 use oot_explorer_core::versions;
 use oot_explorer_gl::display_list_interpreter::DisplayListInterpreter;
 use oot_explorer_gl::rcp::TmemSource;
-use oot_explorer_gl::shader_state::TextureDescriptor;
+use oot_explorer_gl::shader_state::{PaletteSource, TextureDescriptor};
 use scoped_owner::ScopedOwner;
 use std::collections::hash_map::DefaultHasher;
 use std::fs::File;
@@ -220,6 +220,14 @@ fn expand_5_to_8(x: u8) -> u8 {
     (x << 3) | (x >> 2)
 }
 
+fn rgb5a1_to_rgba8(x: u16) -> [u8; 4] {
+    let r = expand_5_to_8(((x >> 11) & 0x1f) as u8);
+    let g = expand_5_to_8(((x >> 6) & 0x1f) as u8);
+    let b = expand_5_to_8(((x >> 1) & 0x1f) as u8);
+    let a = if x & 0x01 == 0x01 { 0xff } else { 0x00 };
+    [r, g, b, a]
+}
+
 fn dump_texture<'a>(
     scope: &'a ScopedOwner,
     fs: &mut LazyFileSystem<'a>,
@@ -239,7 +247,7 @@ fn dump_texture<'a>(
         assert_eq!(src_format, load_format);
         assert_eq!(src_depth, load_depth);
 
-        let src = fs.get_virtual_slice(
+        let src = match fs.get_virtual_slice(
             scope,
             src_ptr
                 ..src_ptr
@@ -247,11 +255,78 @@ fn dump_texture<'a>(
                         / texture.render_depth.texels_per_tmem_word::<usize>()
                         + 8 * (texture.render_height - 1) * texture.render_stride)
                         as u32,
-        );
+        ) {
+            Ok(src) => src,
+            Err(e @ VirtualSliceError::OutOfRange { .. }) => {
+                eprintln!(
+                    "ERROR: unable to decode texture {:?}; inaccessible texels: {:?}",
+                    src_ptr, e,
+                );
+                return;
+            }
+        };
         let stride_bytes = 8 * texture.render_stride;
+
+        let palette = match (|| -> Result<&'a [u8], ()> {
+            let source = match texture.palette_source {
+                PaletteSource::None => return Ok(&[]),
+                PaletteSource::Rgba(ref source) => source,
+                PaletteSource::Ia(ref source) => source,
+            };
+            let palette_entries = match texture.render_depth {
+                TextureDepth::Bits4 => 16,
+                TextureDepth::Bits8 => 256,
+                x => unreachable!("there is no color-indexed format with depth {:?}", x),
+            };
+            match source {
+                &TmemSource::LoadBlock { .. } => {
+                    eprintln!(
+                        "ERROR: unable to decode texture {:?}; palette is required, but the palette was loaded via LoadBlock",
+                        src_ptr,
+                    );
+                    Err(())
+                }
+                &TmemSource::LoadTlut { ptr, count } => {
+                    assert!(count >= palette_entries);
+                    fs.get_virtual_slice(scope, ptr..ptr + 2 * palette_entries as u32)
+                        .map_err(|e| {
+                            eprintln!(
+                                "ERROR: unable to decode texture {:?}; inaccessible palette: {:?}",
+                                src_ptr, e,
+                            );
+                        })
+                }
+                &TmemSource::Undefined => {
+                    eprintln!(
+                        "ERROR: unable to decode texture {:?}; palette is required, but the palette region in TMEM was undefined",
+                        src_ptr,
+                    );
+                    Err(())
+                }
+            }
+        })() {
+            Ok(palette) => palette,
+            Err(()) => return,
+        };
 
         let mut dst = Vec::with_capacity(4 * texture.render_width * texture.render_height);
         match (texture.render_depth, texture.render_format) {
+            (TextureDepth::Bits4, TextureFormat::Ci) => {
+                for y in 0..texture.render_height {
+                    for x in (0..texture.render_width).step_by(2) {
+                        let index_offset = word_swap(stride_bytes * y + x / 2, load_dxt, y);
+                        let indexes = src[index_offset] as usize;
+                        let color1_offset = 2 * (indexes >> 4);
+                        let color1 = ((palette[color1_offset] as u16) << 8)
+                            | palette[color1_offset + 1] as u16;
+                        let color2_offset = 2 * (indexes & 0x0f);
+                        let color2 = ((palette[color2_offset] as u16) << 8)
+                            | palette[color2_offset + 1] as u16;
+                        dst.extend_from_slice(&rgb5a1_to_rgba8(color1));
+                        dst.extend_from_slice(&rgb5a1_to_rgba8(color2));
+                    }
+                }
+            }
             (TextureDepth::Bits4, TextureFormat::Ia) => {
                 for y in 0..texture.render_height {
                     for x in (0..texture.render_width).step_by(2) {
@@ -273,6 +348,17 @@ fn dump_texture<'a>(
                         let i1 = (x & 0xf0) | ((x >> 4) & 0x0f);
                         let i2 = ((x << 4) & 0xf0) | (x & 0x0f);
                         dst.extend_from_slice(&[i1, i1, i1, 255, i2, i2, i2, 255]);
+                    }
+                }
+            }
+            (TextureDepth::Bits8, TextureFormat::Ci) => {
+                for y in 0..texture.render_height {
+                    for x in 0..texture.render_width {
+                        let index_offset = word_swap(stride_bytes * y + x, load_dxt, y);
+                        let color_offset = 2 * src[index_offset] as usize;
+                        let color = ((palette[color_offset] as u16) << 8)
+                            | palette[color_offset + 1] as u16;
+                        dst.extend_from_slice(&rgb5a1_to_rgba8(color));
                     }
                 }
             }
@@ -301,11 +387,7 @@ fn dump_texture<'a>(
                     for x in 0..texture.render_width {
                         let offset = word_swap(stride_bytes * y + 2 * x, load_dxt, y);
                         let x = ((src[offset] as u16) << 8) | src[offset + 1] as u16;
-                        let r = expand_5_to_8(((x >> 11) & 0x1f) as u8);
-                        let g = expand_5_to_8(((x >> 6) & 0x1f) as u8);
-                        let b = expand_5_to_8(((x >> 1) & 0x1f) as u8);
-                        let a = if x & 0x01 == 0x01 { 0xff } else { 0x00 };
-                        dst.extend_from_slice(&[r, g, b, a]);
+                        dst.extend_from_slice(&rgb5a1_to_rgba8(x));
                     }
                 }
             }
@@ -320,8 +402,7 @@ fn dump_texture<'a>(
                 }
             }
             x => {
-                eprintln!("unimplemented format: {:?}", x);
-                return;
+                panic!("unimplemented format: {:?}", x);
             }
         }
 

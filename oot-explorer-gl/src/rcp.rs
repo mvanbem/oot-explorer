@@ -6,7 +6,7 @@ use oot_explorer_core::gbi::{
 use std::ops::Range;
 use thiserror::Error;
 
-use crate::shader_state::{ShaderState, TextureDescriptor};
+use crate::shader_state::{PaletteSource, ShaderState, TextureDescriptor};
 
 #[derive(Debug)]
 pub struct RcpState {
@@ -66,9 +66,28 @@ impl RcpState {
         let tmem_words = texels / attributes.depth.texels_per_tmem_word::<u16>();
         let range = attributes.addr..attributes.addr + tmem_words;
 
-        let source = self.tmem.get_source_for_address_range(range).ok()?;
+        let source = self.tmem.get_source_for_address_range(range).unwrap();
+        let palette_source = match attributes.format {
+            TextureFormat::Ci => {
+                let range = match attributes.depth {
+                    TextureDepth::Bits4 => 256..272,
+                    TextureDepth::Bits8 => 256..512,
+                    x => unreachable!("there is no color-indexed format with depth {:?}", x),
+                };
+                let source = self.tmem.get_source_for_address_range(range).unwrap();
+                match self.rdp_other_mode.hi & OtherModeHMask::TEXTLUT {
+                    OtherModeH::TT_IA16 => PaletteSource::Ia(source),
+                    // NOTE: Not comparing with TT_RGBA16 because it seems many display lists
+                    // actually set TT_NONE. I don't know why this is supposed to work. Maybe the
+                    // enable bit has no effect, so all that matters is the IA16 bit is clear?
+                    _ => PaletteSource::Rgba(source),
+                }
+            }
+            _ => PaletteSource::None,
+        };
         Some(TextureDescriptor {
             source,
+            palette_source,
             render_format: attributes.format,
             render_depth: attributes.depth,
             render_width: (((dimensions.s.end.0 - dimensions.s.start.0) >> 2) + 1) as usize,

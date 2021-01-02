@@ -9,5 +9,6 @@ license = "MIT"
 
 [dependencies]
 byteorder = "1"
+num-traits = "0.2"
 scoped-owner = { path = "../scoped-owner" }
 thiserror = "1"

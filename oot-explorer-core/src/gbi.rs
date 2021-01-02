@@ -1,6 +1,7 @@
 use crate::segment::SegmentAddr;
 use crate::slice::StructReader;
 use byteorder::{BigEndian, ReadBytesExt};
+use num_traits::FromPrimitive;
 
 #[derive(Clone, Copy)]
 pub struct DisplayList<'a> {
@@ -60,7 +61,7 @@ pub enum Instruction {
     },
     // 0xd7
     Texture {
-        level: u8,
+        max_lod: u8,
         tile: u8,
         enable: bool,
         scale_s: Qu0_16,
@@ -206,7 +207,7 @@ impl Instruction {
                 index_b: [data[5] / 2, data[6] / 2, data[7] / 2],
             },
             0xd7 => Instruction::Texture {
-                level: ((u32_a >> 11) & 0x07) as u8,
+                max_lod: ((u32_a >> 11) & 0x07) as u8,
                 tile: ((u32_a >> 8) & 0x07) as u8,
                 enable: ((u32_a >> 1) & 0x7f) == 1,
                 scale_s: Qu0_16((u32_b >> 16) as u16),
@@ -1236,6 +1237,15 @@ impl TextureDepth {
             2 => TextureDepth::Bits16,
             3 => TextureDepth::Bits32,
             _ => panic!("unexpected texture depth: 0x{:02x}", value),
+        }
+    }
+
+    pub fn texels_per_tmem_word<T: FromPrimitive>(self) -> T {
+        match self {
+            TextureDepth::Bits4 => T::from_u8(16).unwrap(),
+            TextureDepth::Bits8 => T::from_u8(8).unwrap(),
+            TextureDepth::Bits16 => T::from_u8(4).unwrap(),
+            TextureDepth::Bits32 => T::from_u8(2).unwrap(),
         }
     }
 }

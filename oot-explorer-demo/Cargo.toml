@@ -8,5 +8,8 @@ license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+crossbeam = "0.8"
 oot-explorer-core = { path = "../oot-explorer-core" }
+oot-explorer-gl = { path = "../oot-explorer-gl" }
+png = "0.16"
 scoped-owner = { path = "../scoped-owner" }

@@ -13,6 +13,9 @@ impl Debug for SegmentAddr {
         match segment {
             Segment::SCENE => write!(f, "CurrentScene(0x{:06x})", offset),
             Segment::ROOM => write!(f, "CurrentRoom(0x{:06x})", offset),
+            Segment::GAMEPLAY_KEEP => write!(f, "GameplayKeep(0x{:06x})", offset),
+            Segment::SELECTABLE_KEEP => write!(f, "SelectableKeep(0x{:06x})", offset),
+            Segment::OBJECT => write!(f, "CurrentObject(0x{:06x})", offset),
             _ => write!(f, "UnknownSegment(0x{:02x}, 0x{:06x})", segment.0, offset),
         }
     }
@@ -46,6 +49,9 @@ pub struct Segment(pub u8);
 impl Segment {
     pub const SCENE: Segment = Segment(0x02);
     pub const ROOM: Segment = Segment(0x03);
+    pub const GAMEPLAY_KEEP: Segment = Segment(0x04);
+    pub const SELECTABLE_KEEP: Segment = Segment(0x05);
+    pub const OBJECT: Segment = Segment(0x06);
 }
 
 #[derive(Clone)]

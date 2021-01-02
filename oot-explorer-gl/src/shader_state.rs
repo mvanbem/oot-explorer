@@ -1,14 +1,17 @@
+use oot_explorer_core::gbi::{TextureDepth, TextureFormat};
 use oot_explorer_expr as expr;
 
 use crate::glsl_float_constant::GlslFloatConstant;
 use crate::glsl_vec3_constant::GlslVec3Constant;
-use crate::rcp::{CombinerState, Cycle};
+use crate::rcp::{CombinerState, Cycle, TmemSource};
 use crate::to_expr::ToExpr;
 
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub struct ShaderState {
     pub two_cycle_mode: bool,
     pub combiner: CombinerState,
+    pub texture_a: Option<TextureDescriptor>,
+    pub texture_b: Option<TextureDescriptor>,
 }
 impl ShaderState {
     fn color_0_expr(&self, ctx: &mut expr::Context<GlslVec3Constant>) -> expr::Key {
@@ -70,4 +73,16 @@ void main() {{
             alpha_ctx.get_with_ctx(alpha_1).unwrap(),
         )
     }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct TextureDescriptor {
+    // TODO: Way more fields. Must consider format transformation while loading, plus tile
+    // attributes.
+    pub source: TmemSource,
+    pub render_format: TextureFormat,
+    pub render_depth: TextureDepth,
+    pub render_width: usize,
+    pub render_height: usize,
+    pub render_stride: usize,
 }

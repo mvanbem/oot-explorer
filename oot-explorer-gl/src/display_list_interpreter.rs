@@ -1,18 +1,20 @@
+use byteorder::{NativeEndian, WriteBytesExt};
 use oot_explorer_core::gbi::{
-    self, DisplayList, GeometryMode, Instruction, OtherModeH, Qu10_2, TextureDepth,
+    DisplayList, GeometryMode, Instruction, LitVertex, OtherModeH, Qu0_16, Qu10_2, UnlitVertex,
 };
 use oot_explorer_core::segment::{SegmentAddr, SegmentCtx};
 use oot_explorer_core::slice::Slice;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt::Debug;
+use std::io::Write;
 
 use crate::batch::Batch;
-use crate::lit_vertex::LitVertex;
 use crate::rcp::{
-    CombinerState, RcpState, RdpOtherMode, TextureSource, Tile, TileAttributes, TileDimensions,
-    TileMipScale, Tmem,
+    CombinerState, RcpState, RdpOtherMode, RspTextureState, TextureSource, TileAttributes,
+    TileDimensions, Tmem, TmemRegion, TmemSource,
 };
-use crate::shader_state::ShaderState;
-use crate::unlit_vertex::UnlitVertex;
+use crate::shader_state::{ShaderState, TextureDescriptor};
+use crate::{FLAGS_LIT, FLAGS_UNLIT};
 
 #[derive(Clone)]
 pub struct DisplayListInterpreter {
@@ -23,9 +25,11 @@ pub struct DisplayListInterpreter {
     max_depth: usize,
     total_lit_verts: usize,
     total_unlit_verts: usize,
+    unique_textures: HashSet<TextureDescriptor>,
 
     batches_by_shader_state: HashMap<ShaderState, Batch>,
 }
+
 impl DisplayListInterpreter {
     pub fn new() -> DisplayListInterpreter {
         DisplayListInterpreter {
@@ -36,13 +40,16 @@ impl DisplayListInterpreter {
             max_depth: 0,
             total_lit_verts: 0,
             total_unlit_verts: 0,
+            unique_textures: HashSet::new(),
 
             batches_by_shader_state: HashMap::new(),
         }
     }
+
     pub fn clear_batches(&mut self) {
         self.batches_by_shader_state.clear();
     }
+
     pub fn interpret<'a>(&mut self, ctx: &SegmentCtx<'a>, dlist: DisplayList<'a>) {
         self.interpret_internal(
             ctx,
@@ -56,12 +63,20 @@ impl DisplayListInterpreter {
                 },
                 combiner: None,
                 texture_src: None,
-                tiles: [Tile::default(); 8],
-                tmem: Tmem::Undefined,
+                tiles: Default::default(),
+                rsp_texture_state: RspTextureState {
+                    max_lod: 0,
+                    tile: 0,
+                    enable: true,
+                    scale_s: Qu0_16(0x8000),
+                    scale_t: Qu0_16(0x8000),
+                },
+                tmem: Tmem::default(),
             },
             1,
         );
     }
+
     fn interpret_internal<'a>(
         &mut self,
         ctx: &SegmentCtx<'a>,
@@ -90,23 +105,33 @@ impl DisplayListInterpreter {
                     if state.geometry_mode.test(GeometryMode::LIGHTING) {
                         // Lit vertices
                         self.total_lit_verts += 1;
-                        let vertices = Slice::<'a, gbi::LitVertex<'a>>::new(
+                        let vertices = Slice::<'a, LitVertex<'a>>::new(
                             ctx.resolve(ptr).unwrap(),
                             count as usize,
                         );
                         for vertex in vertices {
-                            state.vertex_slots[index] = Some(self.encode_lit_vertex(&vertex));
+                            state.vertex_slots[index] =
+                                Some(DisplayListInterpreter::transform_and_encode_lit_vertex(
+                                    &vertex,
+                                    state.rsp_texture_state.scale_s,
+                                    state.rsp_texture_state.scale_t,
+                                ));
                             index = (index + 1) & 0x1f;
                         }
                     } else {
                         // Unlit vertices
                         self.total_unlit_verts += 1;
-                        let vertices = Slice::<'a, gbi::UnlitVertex<'a>>::new(
+                        let vertices = Slice::<'a, UnlitVertex<'a>>::new(
                             ctx.resolve(ptr).unwrap(),
                             count as usize,
                         );
                         for vertex in vertices {
-                            state.vertex_slots[index] = Some(self.encode_unlit_vertex(&vertex));
+                            state.vertex_slots[index] =
+                                Some(DisplayListInterpreter::transform_and_encode_unlit_vertex(
+                                    &vertex,
+                                    state.rsp_texture_state.scale_s,
+                                    state.rsp_texture_state.scale_t,
+                                ));
                             index = (index + 1) & 0x1f;
                         }
                     }
@@ -126,52 +151,28 @@ impl DisplayListInterpreter {
                 }
                 // 0x05
                 Instruction::Tri1 { index } => {
-                    // Print each unique shader state as it is encountered.
-                    let shader_state = state.shader_state();
-                    let batch = self
-                        .batches_by_shader_state
-                        .entry(shader_state.clone())
-                        .or_insert_with(|| Batch::for_shader_state(&shader_state));
-
-                    for slot in index.iter().copied() {
-                        if let Some(vertex) = state.vertex_slots[slot as usize].as_ref() {
-                            batch.vertex_data.extend_from_slice(&vertex[..]);
-                        } else {
-                            panic!("display list referenced uninitialized vertex slot {}", slot);
-                        }
-                    }
+                    self.process_triangle(state, index);
                 }
                 // 0x06
                 Instruction::Tri2 { index_a, index_b } => {
-                    // Print each unique shader state as it is encountered.
-                    let shader_state = state.shader_state();
-                    let batch = self
-                        .batches_by_shader_state
-                        .entry(shader_state.clone())
-                        .or_insert_with(|| Batch::for_shader_state(&shader_state));
-
-                    for slot in index_a.iter().copied().chain(index_b.iter().copied()) {
-                        if let Some(vertex) = state.vertex_slots[slot as usize].as_ref() {
-                            batch.vertex_data.extend_from_slice(&vertex[..]);
-                        } else {
-                            panic!("display list referenced uninitialized vertex slot {}", slot);
-                        }
-                    }
+                    self.process_triangle(state, index_a);
+                    self.process_triangle(state, index_b);
                 }
                 // 0xd7
                 Instruction::Texture {
-                    level,
+                    max_lod,
                     tile,
                     enable,
                     scale_s,
                     scale_t,
                 } => {
-                    state.tiles[(tile & 0x7) as usize].mip_scale = Some(TileMipScale {
-                        level,
+                    state.rsp_texture_state = RspTextureState {
+                        max_lod,
+                        tile,
                         enable,
                         scale_s,
                         scale_t,
-                    });
+                    };
                 }
                 // 0xd9
                 Instruction::GeometryMode {
@@ -222,8 +223,21 @@ impl DisplayListInterpreter {
                 // 0xe8
                 Instruction::RdpTileSync => (),
                 // 0xf0
-                Instruction::LoadTlut { .. } => {
-                    eprintln!("WARNING: LoadTlut instruction is unimplemented")
+                Instruction::LoadTlut { tile, count } => {
+                    state.tiles[tile as usize].dimensions = None;
+
+                    if let Some(texture_src) = state.texture_src.as_ref() {
+                        let range = 256..256 + count;
+                        let source = TmemSource::LoadTlut {
+                            ptr: texture_src.ptr,
+                            count,
+                        };
+                        state.tmem.overlay(TmemRegion { range, source });
+                    } else {
+                        // Source attributes are not sufficiently defined to determine the
+                        // destination range. Invalidate the whole TMEM.
+                        state.tmem = Tmem::default();
+                    }
                 }
                 // 0xf2
                 Instruction::SetTileSize {
@@ -233,19 +247,16 @@ impl DisplayListInterpreter {
                     end_s,
                     end_t,
                 } => {
-                    // Haven't figured out how to handle these yet.
-                    assert_eq!(start_s, Qu10_2(0));
-                    assert_eq!(start_t, Qu10_2(0));
                     state.tiles[tile as usize].dimensions = Some(TileDimensions {
-                        width: end_s.as_f32() as usize + 1,
-                        height: end_t.as_f32() as usize + 1,
+                        s: start_s..end_s,
+                        t: start_t..end_t,
                     });
                 }
                 // 0xf3
                 Instruction::LoadBlock {
                     start_s,
                     start_t,
-                    tile: _,
+                    tile,
                     texels,
                     dxt,
                 } => {
@@ -253,26 +264,30 @@ impl DisplayListInterpreter {
                     assert_eq!(start_s, Qu10_2(0));
                     assert_eq!(start_t, Qu10_2(0));
 
-                    // TODO: Use the tile input somehow? Does it
-                    // matter if the start coordinates are always
-                    // zero?
+                    state.tiles[tile as usize].dimensions = None;
 
-                    if let Some(texture_src) = state.texture_src.as_ref() {
-                        state.tmem = Tmem::LoadBlock {
-                            dxt,
-                            ptr: texture_src.ptr,
-                            len: match texture_src.depth {
-                                TextureDepth::Bits4 => (texels as u32) / 2,
-                                TextureDepth::Bits8 => texels as u32,
-                                TextureDepth::Bits16 => (texels as u32) * 2,
-                                TextureDepth::Bits32 => (texels as u32) * 4,
-                            },
+                    let tile = &state.tiles[tile as usize];
+                    let tile_attributes = tile.attributes.as_ref();
+                    if let (Some(texture_src), Some(tile_attributes)) =
+                        (state.texture_src.as_ref(), tile_attributes)
+                    {
+                        let len: u16 = texels / texture_src.depth.texels_per_tmem_word::<u16>();
+                        let range = tile_attributes.addr..tile_attributes.addr + len;
+                        let source = TmemSource::LoadBlock {
+                            src_ptr: texture_src.ptr,
+                            src_format: texture_src.format,
+                            src_depth: texture_src.depth,
+                            load_dxt: dxt,
+                            load_texels: texels,
+                            load_format: tile_attributes.format,
+                            load_depth: tile_attributes.depth,
                         };
+                        state.tmem.overlay(TmemRegion { range, source });
                     } else {
-                        eprintln!("WARNING: texture load from unmapped address");
-                        state.tmem = Tmem::Undefined;
+                        // Tile parameters and/or source attributes are not sufficiently defined to
+                        // determine the destination range. Invalidate the whole TMEM.
+                        state.tmem = Tmem::default();
                     }
-                    println!("{:?}", state.tmem);
                 }
                 // 0xf5
                 Instruction::SetTile {
@@ -336,13 +351,14 @@ impl DisplayListInterpreter {
                     width: _,
                     ptr,
                 } => {
+                    // NOTE: That width value does appear to exist, but is not used by LoadBlock
+                    // instructions and I'm not sure Ocarina of Time ends up using it at all.
                     if let Ok(vrom_range) = ctx.resolve_vrom(ptr) {
                         state.texture_src = Some(TextureSource {
                             format,
                             depth,
                             ptr: vrom_range.start,
                         });
-                        println!("{:?}", state.texture_src.as_ref().unwrap());
                     } else {
                         state.texture_src = None;
                         *self.unmapped_textures.entry(ptr).or_default() += 1;
@@ -351,41 +367,162 @@ impl DisplayListInterpreter {
             }
         });
     }
-    fn encode_unlit_vertex<T>(&mut self, vertex: &T) -> [u8; 20]
-    where
-        T: UnlitVertex,
-    {
+
+    fn transform_texcoord(texcoord: i16, scale: Qu0_16) -> i16 {
+        (((texcoord as i32) * (scale.0 as i32)) >> 16) as i16
+    }
+
+    fn transform_and_encode_unlit_vertex(
+        vertex: &UnlitVertex,
+        scale_s: Qu0_16,
+        scale_t: Qu0_16,
+    ) -> [u8; 20] {
         let mut buf = [0; 20];
-        crate::unlit_vertex::write_unlit_vertex(&mut buf, vertex);
+
+        let mut w = &mut buf[..];
+        // [0..=5] Position
+        let pos = vertex.position();
+        w.write_i16::<NativeEndian>(pos[0]).unwrap();
+        w.write_i16::<NativeEndian>(pos[1]).unwrap();
+        w.write_i16::<NativeEndian>(pos[2]).unwrap();
+        // [6..=7] Padding
+        w.write_u16::<NativeEndian>(0).unwrap();
+        // [8..=10] Normal (unused for unlit geometry)
+        w.write_i8(0).unwrap();
+        w.write_i8(0).unwrap();
+        w.write_i8(0).unwrap();
+        // [11] Flags
+        w.write_u8(FLAGS_UNLIT).unwrap();
+        // [12..=15] Texture coordinates
+        let texcoord = vertex.texcoord();
+        w.write_i16::<NativeEndian>(DisplayListInterpreter::transform_texcoord(
+            texcoord[0],
+            scale_s,
+        ))
+        .unwrap();
+        w.write_i16::<NativeEndian>(DisplayListInterpreter::transform_texcoord(
+            texcoord[1],
+            scale_t,
+        ))
+        .unwrap(); // [16..=19] Color
+        let color = vertex.color();
+        w.write_all(&color[..]).unwrap();
+        assert_eq!(w.len(), 0);
+
         buf
     }
-    fn encode_lit_vertex<T>(&mut self, vertex: &T) -> [u8; 20]
-    where
-        T: LitVertex,
-    {
+
+    fn transform_and_encode_lit_vertex(
+        vertex: &LitVertex,
+        scale_s: Qu0_16,
+        scale_t: Qu0_16,
+    ) -> [u8; 20] {
         let mut buf = [0; 20];
-        crate::lit_vertex::write_lit_vertex(&mut buf, vertex);
+
+        let mut w = &mut buf[..];
+        // [0..=5] Position
+        let pos = vertex.position();
+        w.write_i16::<NativeEndian>(pos[0]).unwrap();
+        w.write_i16::<NativeEndian>(pos[1]).unwrap();
+        w.write_i16::<NativeEndian>(pos[2]).unwrap();
+        // [6..=7] Padding
+        w.write_u16::<NativeEndian>(0).unwrap();
+        // [8..=10] Normal
+        let normal = vertex.normal();
+        w.write_i8(normal[0]).unwrap();
+        w.write_i8(normal[1]).unwrap();
+        w.write_i8(normal[2]).unwrap();
+        // [11] Flags
+        w.write_u8(FLAGS_LIT).unwrap();
+        // [12..=15] Texture coordinates
+        let texcoord = vertex.texcoord();
+        w.write_i16::<NativeEndian>(DisplayListInterpreter::transform_texcoord(
+            texcoord[0],
+            scale_s,
+        ))
+        .unwrap();
+        w.write_i16::<NativeEndian>(DisplayListInterpreter::transform_texcoord(
+            texcoord[1],
+            scale_t,
+        ))
+        .unwrap();
+        // [16..=19] Color (RGB are unused for lit geometry)
+        w.write_u8(0).unwrap();
+        w.write_u8(0).unwrap();
+        w.write_u8(0).unwrap();
+        w.write_u8(vertex.alpha()).unwrap();
+        assert_eq!(w.len(), 0);
+
         buf
+    }
+
+    fn process_triangle(&mut self, state: &mut RcpState, index: [u8; 3]) {
+        // Print each unique shader state as it is encountered.
+        let shader_state = state.shader_state();
+        let batch = self
+            .batches_by_shader_state
+            .entry(shader_state.clone())
+            .or_insert_with(|| Batch::for_shader_state(&shader_state));
+
+        // Track unique textures used.
+        for texture in shader_state
+            .texture_a
+            .iter()
+            .chain(shader_state.texture_b.iter())
+        {
+            match texture.source {
+                TmemSource::Undefined => (),
+                _ => {
+                    self.unique_textures.insert(texture.clone());
+                }
+            }
+        }
+
+        for slot in index.iter().copied() {
+            if let Some(vertex) = state.vertex_slots[slot as usize].as_ref() {
+                batch.vertex_data.extend_from_slice(&vertex[..]);
+            } else {
+                panic!("display list referenced uninitialized vertex slot {}", slot);
+            }
+        }
     }
 
     pub fn total_dlists(&self) -> usize {
         self.total_dlists
     }
+
     pub fn total_instructions(&self) -> usize {
         self.total_instructions
     }
-    pub fn unmapped_calls(&self) -> impl std::fmt::Debug + '_ {
+
+    pub fn unmapped_calls(&self) -> impl Debug + '_ {
         &self.unmapped_calls
     }
+
+    pub fn unmapped_textures(&self) -> impl Debug + '_ {
+        &self.unmapped_textures
+    }
+
     pub fn max_depth(&self) -> usize {
         self.max_depth
     }
+
     pub fn total_lit_verts(&self) -> usize {
         self.total_lit_verts
     }
+
     pub fn total_unlit_verts(&self) -> usize {
         self.total_unlit_verts
     }
+
+    pub fn unique_textures(&self) -> usize {
+        self.unique_textures.len()
+    }
+
+    pub fn iter_textures(&self) -> std::collections::hash_set::Iter<'_, TextureDescriptor> {
+        self.unique_textures.iter()
+    }
+
     pub fn for_each_batch<F>(&mut self, mut f: F)
     where
         F: FnMut(&Batch),

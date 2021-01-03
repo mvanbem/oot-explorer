@@ -48,16 +48,21 @@ uniform vec3 u_scale;
 uniform float u_k4;
 uniform float u_k5;
 */
+uniform sampler2D u_texture_a;
+uniform sampler2D u_texture_b;
+uniform vec2 u_texture_a_inv_size;
+uniform vec2 u_texture_b_inv_size;
 
 in vec4 v_color;
 in vec4 v_shade;
+in vec2 v_tex_coord;
 
 layout(location = 0) out vec4 fragColor;
 
 void main() {{
   // TODO: implement texturing
-  vec4 texel0 = vec4(1.0, 0.0, 1.0, 0.5);
-  vec4 texel1 = vec4(1.0, 0.0, 1.0, 0.5);
+  vec4 texel0 = texture(u_texture_a, v_tex_coord * u_texture_a_inv_size);
+  vec4 texel1 = texture(u_texture_b, v_tex_coord * u_texture_b_inv_size);
   // TODO: implement noise?
   // TODO: implement LOD
   float lod_fraction = 0.5;
@@ -84,6 +89,7 @@ pub struct TextureDescriptor {
     pub render_width: usize,
     pub render_height: usize,
     pub render_stride: usize,
+    pub render_palette: u8,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]

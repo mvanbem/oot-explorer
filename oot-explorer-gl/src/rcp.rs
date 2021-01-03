@@ -93,6 +93,7 @@ impl RcpState {
             render_width: (((dimensions.s.end.0 - dimensions.s.start.0) >> 2) + 1) as usize,
             render_height: (((dimensions.t.end.0 - dimensions.t.start.0) >> 2) + 1) as usize,
             render_stride: attributes.stride as usize,
+            render_palette: attributes.palette,
         })
     }
 }
@@ -261,6 +262,16 @@ pub enum TmemSource {
         ptr: VromAddr,
         count: u16,
     },
+}
+
+impl TmemSource {
+    pub fn src(&self) -> Option<VromAddr> {
+        match self {
+            &TmemSource::Undefined => None,
+            &TmemSource::LoadBlock { src_ptr, .. } => Some(src_ptr),
+            &TmemSource::LoadTlut { ptr, .. } => Some(ptr),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

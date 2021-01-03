@@ -12,4 +12,5 @@ byteorder = "1"
 num-traits = "0.2"
 oot-explorer-core = { path = "../oot-explorer-core" }
 oot-explorer-expr = { path = "../oot-explorer-expr" }
+scoped-owner = { path = "../scoped-owner" }
 thiserror = "1"

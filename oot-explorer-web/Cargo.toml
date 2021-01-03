@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 byteorder = "1"
+console_error_panic_hook = "0.1"
 js-sys = "0.3"
 num-traits = "0.2"
 oot-explorer-core = { path = "../oot-explorer-core" }
@@ -25,8 +26,11 @@ version = "0.3"
 features = [
     "console",
     "Document",
+    "ExtTextureFilterAnisotropic",
     "HtmlCanvasElement",
     "HtmlElement",
     "Node",
+    "WebGl2RenderingContext",
+    "WebGlTexture",
     "Window",
 ]

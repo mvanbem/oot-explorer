@@ -1,5 +1,5 @@
-use oot_explorer_core::fs::{LazyFileSystem, VirtualSliceError};
-use oot_explorer_core::gbi::{DisplayList, Qu1_11, TextureDepth, TextureFormat};
+use oot_explorer_core::fs::LazyFileSystem;
+use oot_explorer_core::gbi::DisplayList;
 use oot_explorer_core::header::{MeshHeader, RoomHeader, SceneHeader};
 use oot_explorer_core::mesh::MeshVariant;
 use oot_explorer_core::rom::Rom;
@@ -8,10 +8,10 @@ use oot_explorer_core::scene::Scene;
 use oot_explorer_core::segment::{Segment, SegmentCtx, SegmentResolveError};
 use oot_explorer_core::versions;
 use oot_explorer_gl::display_list_interpreter::DisplayListInterpreter;
-use oot_explorer_gl::rcp::TmemSource;
-use oot_explorer_gl::shader_state::{PaletteSource, TextureDescriptor};
+use oot_explorer_gl::shader_state::TextureDescriptor;
 use scoped_owner::ScopedOwner;
 use std::collections::hash_map::DefaultHasher;
+use std::convert::TryInto;
 use std::fs::File;
 use std::hash::{Hash, Hasher};
 use std::io::{BufWriter, Write};
@@ -201,233 +201,42 @@ fn enumerate_meshes<'a, F>(
     }
 }
 
-// Applies both layers of TMEM word swapping. One is performed by the LoadBlock command based on
-// load_dxt and the word offset. The other is performed by the RDP based on y. These may cancel out.
-fn word_swap(offset: usize, load_dxt: Qu1_11, render_y: usize) -> usize {
-    let load_line = ((offset / 8) * (load_dxt.0 as usize)) >> 11;
-    let load_swap = load_line & 1 == 1;
-
-    let render_swap = render_y & 1 == 1;
-
-    if load_swap != render_swap {
-        offset ^ 0x4
-    } else {
-        offset
-    }
-}
-
-fn expand_5_to_8(x: u8) -> u8 {
-    (x << 3) | (x >> 2)
-}
-
-fn rgb5a1_to_rgba8(x: u16) -> [u8; 4] {
-    let r = expand_5_to_8(((x >> 11) & 0x1f) as u8);
-    let g = expand_5_to_8(((x >> 6) & 0x1f) as u8);
-    let b = expand_5_to_8(((x >> 1) & 0x1f) as u8);
-    let a = if x & 0x01 == 0x01 { 0xff } else { 0x00 };
-    [r, g, b, a]
-}
-
 fn dump_texture<'a>(
     scope: &'a ScopedOwner,
     fs: &mut LazyFileSystem<'a>,
     texture: &TextureDescriptor,
 ) {
-    if let TmemSource::LoadBlock {
-        src_ptr,
-        src_format,
-        src_depth,
-        load_dxt,
-        load_format,
-        load_depth,
-        ..
-    } = texture.source
-    {
-        // Format conversion during load is not implemented.
-        assert_eq!(src_format, load_format);
-        assert_eq!(src_depth, load_depth);
+    let src = texture.source.src().unwrap();
 
-        let src = match fs.get_virtual_slice(
-            scope,
-            src_ptr
-                ..src_ptr
-                    + (8 * texture.render_width
-                        / texture.render_depth.texels_per_tmem_word::<usize>()
-                        + 8 * (texture.render_height - 1) * texture.render_stride)
-                        as u32,
-        ) {
-            Ok(src) => src,
-            Err(e @ VirtualSliceError::OutOfRange { .. }) => {
-                eprintln!(
-                    "ERROR: unable to decode texture {:?}; inaccessible texels: {:?}",
-                    src_ptr, e,
-                );
-                return;
-            }
-        };
-        let stride_bytes = 8 * texture.render_stride;
-
-        let palette = match (|| -> Result<&'a [u8], ()> {
-            let source = match texture.palette_source {
-                PaletteSource::None => return Ok(&[]),
-                PaletteSource::Rgba(ref source) => source,
-                PaletteSource::Ia(ref source) => source,
-            };
-            let palette_entries = match texture.render_depth {
-                TextureDepth::Bits4 => 16,
-                TextureDepth::Bits8 => 256,
-                x => unreachable!("there is no color-indexed format with depth {:?}", x),
-            };
-            match source {
-                &TmemSource::LoadBlock { .. } => {
-                    eprintln!(
-                        "ERROR: unable to decode texture {:?}; palette is required, but the palette was loaded via LoadBlock",
-                        src_ptr,
-                    );
-                    Err(())
-                }
-                &TmemSource::LoadTlut { ptr, count } => {
-                    assert!(count >= palette_entries);
-                    fs.get_virtual_slice(scope, ptr..ptr + 2 * palette_entries as u32)
-                        .map_err(|e| {
-                            eprintln!(
-                                "ERROR: unable to decode texture {:?}; inaccessible palette: {:?}",
-                                src_ptr, e,
-                            );
-                        })
-                }
-                &TmemSource::Undefined => {
-                    eprintln!(
-                        "ERROR: unable to decode texture {:?}; palette is required, but the palette region in TMEM was undefined",
-                        src_ptr,
-                    );
-                    Err(())
-                }
-            }
-        })() {
-            Ok(palette) => palette,
-            Err(()) => return,
-        };
-
-        let mut dst = Vec::with_capacity(4 * texture.render_width * texture.render_height);
-        match (texture.render_depth, texture.render_format) {
-            (TextureDepth::Bits4, TextureFormat::Ci) => {
-                for y in 0..texture.render_height {
-                    for x in (0..texture.render_width).step_by(2) {
-                        let index_offset = word_swap(stride_bytes * y + x / 2, load_dxt, y);
-                        let indexes = src[index_offset] as usize;
-                        let color1_offset = 2 * (indexes >> 4);
-                        let color1 = ((palette[color1_offset] as u16) << 8)
-                            | palette[color1_offset + 1] as u16;
-                        let color2_offset = 2 * (indexes & 0x0f);
-                        let color2 = ((palette[color2_offset] as u16) << 8)
-                            | palette[color2_offset + 1] as u16;
-                        dst.extend_from_slice(&rgb5a1_to_rgba8(color1));
-                        dst.extend_from_slice(&rgb5a1_to_rgba8(color2));
-                    }
-                }
-            }
-            (TextureDepth::Bits4, TextureFormat::Ia) => {
-                for y in 0..texture.render_height {
-                    for x in (0..texture.render_width).step_by(2) {
-                        let offset = word_swap(stride_bytes * y + x / 2, load_dxt, y);
-                        let x = src[offset];
-                        let i1 = (x & 0xe0) | ((x >> 3) & 0x8c) | ((x >> 6) & 0x03);
-                        let a1 = if x & 0x10 == 0x10 { 0xff } else { 0x00 };
-                        let i2 = ((x << 4) & 0xe0) | ((x << 1) & 0x8c) | ((x >> 2) & 0x03);
-                        let a2 = if x & 0x01 == 0x01 { 0xff } else { 0x00 };
-                        dst.extend_from_slice(&[i1, i1, i1, a1, i2, i2, i2, a2]);
-                    }
-                }
-            }
-            (TextureDepth::Bits4, TextureFormat::I) => {
-                for y in 0..texture.render_height {
-                    for x in (0..texture.render_width).step_by(2) {
-                        let offset = word_swap(stride_bytes * y + x / 2, load_dxt, y);
-                        let x = src[offset];
-                        let i1 = (x & 0xf0) | ((x >> 4) & 0x0f);
-                        let i2 = ((x << 4) & 0xf0) | (x & 0x0f);
-                        dst.extend_from_slice(&[i1, i1, i1, 255, i2, i2, i2, 255]);
-                    }
-                }
-            }
-            (TextureDepth::Bits8, TextureFormat::Ci) => {
-                for y in 0..texture.render_height {
-                    for x in 0..texture.render_width {
-                        let index_offset = word_swap(stride_bytes * y + x, load_dxt, y);
-                        let color_offset = 2 * src[index_offset] as usize;
-                        let color = ((palette[color_offset] as u16) << 8)
-                            | palette[color_offset + 1] as u16;
-                        dst.extend_from_slice(&rgb5a1_to_rgba8(color));
-                    }
-                }
-            }
-            (TextureDepth::Bits8, TextureFormat::Ia) => {
-                for y in 0..texture.render_height {
-                    for x in 0..texture.render_width {
-                        let offset = word_swap(stride_bytes * y + x, load_dxt, y);
-                        let x = src[offset];
-                        let i = (x & 0xf0) | ((x >> 4) & 0x0f);
-                        let a = ((x << 4) & 0xf0) | (x & 0x0f);
-                        dst.extend_from_slice(&[i, i, i, a]);
-                    }
-                }
-            }
-            (TextureDepth::Bits8, TextureFormat::I) => {
-                for y in 0..texture.render_height {
-                    for x in 0..texture.render_width {
-                        let offset = word_swap(stride_bytes * y + x, load_dxt, y);
-                        let i = src[offset];
-                        dst.extend_from_slice(&[i, i, i, 255]);
-                    }
-                }
-            }
-            (TextureDepth::Bits16, TextureFormat::Rgba) => {
-                for y in 0..texture.render_height {
-                    for x in 0..texture.render_width {
-                        let offset = word_swap(stride_bytes * y + 2 * x, load_dxt, y);
-                        let x = ((src[offset] as u16) << 8) | src[offset + 1] as u16;
-                        dst.extend_from_slice(&rgb5a1_to_rgba8(x));
-                    }
-                }
-            }
-            (TextureDepth::Bits16, TextureFormat::Ia) => {
-                for y in 0..texture.render_height {
-                    for x in 0..texture.render_width {
-                        let offset = word_swap(stride_bytes * y + 2 * x, load_dxt, y);
-                        let i = src[offset];
-                        let a = src[offset + 1];
-                        dst.extend_from_slice(&[i, i, i, a]);
-                    }
-                }
-            }
-            x => {
-                panic!("unimplemented format: {:?}", x);
-            }
+    let decoded_texture = match oot_explorer_gl::texture::decode(scope, fs, texture) {
+        Ok(decoded_texture) => decoded_texture,
+        Err(e) => {
+            eprintln!("WARNING: failed to decode texture {:?}: {}", src, e);
+            return;
         }
+    };
 
-        let mut file = {
-            let mut path = PathBuf::from("./textures");
-            let hash = {
-                let mut hasher = DefaultHasher::new();
-                texture.hash(&mut hasher);
-                hasher.finish()
-            };
-            path.push(format!("0x{:08x}_0x{:016x}.png", src_ptr.0, hash));
-            BufWriter::new(File::create(path).unwrap())
+    let mut file = {
+        let mut path = PathBuf::from("./textures");
+        let hash = {
+            let mut hasher = DefaultHasher::new();
+            texture.hash(&mut hasher);
+            hasher.finish()
         };
+        path.push(format!("0x{:08x}_0x{:016x}.png", src.0, hash));
+        BufWriter::new(File::create(path).unwrap())
+    };
 
-        let mut encoder = png::Encoder::new(
-            &mut file,
-            texture.render_width as u32,
-            texture.render_height as u32,
-        );
-        encoder.set_color(png::ColorType::RGBA);
-        encoder.set_depth(png::BitDepth::Eight);
-        let mut writer = encoder.write_header().unwrap();
+    let mut encoder = png::Encoder::new(
+        &mut file,
+        decoded_texture.width.try_into().unwrap(),
+        decoded_texture.height.try_into().unwrap(),
+    );
+    encoder.set_color(png::ColorType::RGBA);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().unwrap();
 
-        writer.write_image_data(&dst).unwrap();
-        drop(writer);
-        file.flush().unwrap()
-    }
+    writer.write_image_data(&decoded_texture.data).unwrap();
+    drop(writer);
+    file.flush().unwrap()
 }

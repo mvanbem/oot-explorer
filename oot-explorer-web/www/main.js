@@ -1,3 +1,10 @@
+import * as core from './oot_explorer_web.js';
+
+const CORE_CONTEXT_CTOR = (async () => {
+  await core.default();
+  return (gl, rom) => new core.Context(gl, rom);
+})();
+
 let vec3 = glMatrix.vec3;
 let mat4 = glMatrix.mat4;
 
@@ -18,43 +25,33 @@ window.addEventListener('error', e => {
   Status.show('top-level error: ' + e.message);
 });
 
-window.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('clear-button').addEventListener('click', () => {
-    RomStorage.clear()
-      .then(() => {
-        window.location.reload();
-      })
-      .catch(e => {
-        Status.show(e.name + ': ' + e.message);
-        throw e;
-      });
+window.addEventListener('DOMContentLoaded', async () => {
+  document.getElementById('clear-button').addEventListener('click', async () => {
+    await RomStorage.clear();
+    window.location.reload();
   });
 
-  RomStorage.load()
-    .then(rom => {
-      if (rom === null) {
-        Container.setView(new RomView().element);
-      } else {
-        Container.setView(new MainView({ rom }).canvas);
-      }
-    })
-    .catch(e => {
-      Status.show(e.name + ': ' + e.message);
-      throw e;
-    });
+  let rom = await RomStorage.load();
+  if (rom === null) {
+    Container.setView(new RomView().element);
+  } else {
+    Container.setView(new MainView({ rom }).canvas);
+  }
 });
 
-let Container = (() => {
+const Container = (() => {
   class Container {
     constructor() {
       this.element = document.getElementById('container');
     }
+
     setView(view) {
       while (this.element.lastChild !== null) {
         this.element.removeChild(this.element.lastChild);
       }
       this.element.appendChild(view);
     }
+
     getBoundingClientRect() {
       return this.element.getBoundingClientRect();
     }
@@ -63,15 +60,17 @@ let Container = (() => {
   return new Container();
 })();
 
-export let Status = (() => {
+const Status = (() => {
   class Status {
     constructor() {
       this.element = document.getElementById('status');
     }
+
     show(msg) {
       this.element.className = '';
       this.element.textContent = msg;
     }
+
     hide() {
       this.element.className = 'hidden';
     }
@@ -80,7 +79,7 @@ export let Status = (() => {
   return new Status();
 })();
 
-let RomStorage = (() => {
+const RomStorage = (() => {
   const DATABASE_NAME = 'rom';
   const OBJECT_STORE_NAME = 'rom';
   const KEY = 'rom';
@@ -89,6 +88,7 @@ let RomStorage = (() => {
     constructor() {
       this.dbPromise = null;
     }
+
     getDatabase() {
       if (!this.dbPromise) {
         this.dbPromise = new Promise((resolve, reject) => {
@@ -103,6 +103,7 @@ let RomStorage = (() => {
       }
       return this.dbPromise;
     }
+
     async load() {
       Status.show('Checking IndexedDB for stored ROM...');
       const db = await this.getDatabase();
@@ -122,6 +123,7 @@ let RomStorage = (() => {
       }
       return rom;
     }
+
     // [rom] is expected to be an ArrayBuffer
     async store(rom) {
       let messages = [];
@@ -139,6 +141,7 @@ let RomStorage = (() => {
         txn.objectStore(OBJECT_STORE_NAME).put(rom, KEY);
       });
     }
+
     async clear() {
       Status.show('Clearing IndexedDB...');
       const db = await this.getDatabase();
@@ -150,6 +153,7 @@ let RomStorage = (() => {
         txn.objectStore(OBJECT_STORE_NAME).delete(KEY);
       });
     }
+
     isValid(rom, outMessages) {
       let header = new RomHeader(rom);
       let pass = true;
@@ -234,8 +238,9 @@ class RomView {
       ],
     });
 
-    this.storeButton.addEventListener('click', this.handleStore.bind(this));
+    this.storeButton.addEventListener('click', () => this.handleStore());
   }
+
   handleStore() {
     this.storeButton.disabled = true;
     this.errorDiv.textContent = '';
@@ -249,28 +254,28 @@ class RomView {
     let file = fileList[0];
 
     Status.show('Reading file...');
-    return new Promise((resolve, reject) => {
+    this.asyncCompleteStore(new Promise((resolve, reject) => {
       let reader = new FileReader();
       reader.readAsArrayBuffer(file);
       reader.addEventListener('load', () => resolve(reader.result));
       reader.addEventListener('error', () => reject(reader.error));
       reader.addEventListener('abort', () => new Error('read aborted'));
-    })
-      .then(rom => RomStorage.store(rom).then(() => rom))
-      .catch(e => {
-        this.storeButton.disabled = false;
-        this.errorDiv.textContent = e.name + ': ' + e.message;
-        Status.hide();
-      })
-      .then(rom => {
-        if (rom) {
-          Container.setView(new MainView({ rom }).canvas);
-        }
-      })
-      .catch(e => {
-        Status.show(e.name + ': ' + e.message);
-        throw e;
-      });
+    }));
+  }
+
+  async asyncCompleteStore(romPromise) {
+    let rom;
+    try {
+      rom = await romPromise;
+    } catch (e) {
+      this.storeButton.disabled = false;
+      this.errorDiv.textContent = e.name + ': ' + e.message;
+      Status.hide();
+      return;
+    }
+
+    await RomStorage.store(rom);
+    Container.setView(new MainView({ rom }).canvas);
   }
 }
 
@@ -290,12 +295,14 @@ uniform mat4 u_modelViewMatrix;
 
 out vec4 v_color;
 out vec4 v_shade;
+out vec2 v_tex_coord;
 
 void main() {
   gl_Position = u_projectionMatrix * u_modelViewMatrix * vec4(vertexPosition, 1.0);
 
   v_color = vertexColor;
   v_shade = vertexColor;
+  v_tex_coord = vertexTexCoord / 32.0;
 }
 `;
 
@@ -349,6 +356,7 @@ class MainView {
       for (let touch of e.changedTouches) {
         this.touches.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
       }
+      e.preventDefault();
     });
     this.canvas.addEventListener('touchmove', e => {
       for (let touch of e.changedTouches) {
@@ -408,43 +416,48 @@ class MainView {
     };
 
     this.batches = null;
-
-    let t1 = performance.now();
-    Status.show('Launching web worker...');
-    let worker = new Worker('worker.js', { type: 'module' });
-    worker.addEventListener('message', e => {
-      switch (e.data.kind) {
-        case 'status':
-          Status.show('Worker: ' + e.data);
-          break;
-        case 'ready':
-          Status.show('Processing scene...');
-          worker.postMessage({ kind: 'processScene', scene: 0 });
-          break;
-        case 'scene':
-          this.batches = [];
-          for (let batch of e.data.batches) {
-            this.batches.push({
-              program: glInitProgram(gl, VERTEX_SHADER_SOURCE, batch.fragmentShader),
-              vertexBuffer: (() => {
-                let buffer = gl.createBuffer();
-                gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-                gl.bufferData(gl.ARRAY_BUFFER, batch.vertexData, gl.STATIC_DRAW);
-                return buffer;
-              })(),
-              mode: gl.TRIANGLES,
-              count: batch.vertexData.byteLength / 20,
-            });
-          }
-          console.log(this.batches);
-          let t2 = performance.now();
-          Status.show('Done in ' + Math.round(t2 - t1) + ' ms');
-      }
-    });
-    worker.postMessage({ kind: 'init', rom }, [rom]);
-
+    this.asyncInit(rom);
     window.requestAnimationFrame(this.step.bind(this));
   }
+
+  async asyncInit(rom) {
+    let gl = this.gl;
+    let contextCtor = await CORE_CONTEXT_CTOR;
+
+    let t1 = performance.now();
+    Status.show('Processing scene...');
+    let ctx = contextCtor(gl, new Uint8Array(rom));
+
+    this.batches = [];
+    for (let batch of ctx.processScene(0)) {
+      let textures = [];
+      for (let texture of batch.textures) {
+        textures.push({
+          texture: ctx.getTexture(texture.key),
+          width: texture.width,
+          height: texture.height,
+        });
+      }
+
+      this.batches.push({
+        program: glInitProgram(gl, VERTEX_SHADER_SOURCE, batch.fragmentShader),
+        vertexBuffer: (() => {
+          let buffer = gl.createBuffer();
+          gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+          gl.bufferData(gl.ARRAY_BUFFER, batch.vertexData, gl.STATIC_DRAW);
+          return buffer;
+        })(),
+        mode: gl.TRIANGLES,
+        count: batch.vertexData.byteLength / 20,
+        textures,
+      });
+    }
+    console.log(this.batches);
+
+    let t2 = performance.now();
+    Status.show('Processed scene in ' + Math.round(t2 - t1) + ' ms');
+  }
+
   updateDimensions() {
     let r = Container.getBoundingClientRect();
     let width = (r.width * window.devicePixelRatio) | 0;
@@ -457,6 +470,7 @@ class MainView {
       this.canvas.style.height = r.height + 'px';
     }
   }
+
   step(timestamp) {
     let abort = false;
     this.updateDimensions();
@@ -529,6 +543,8 @@ class MainView {
         gl.getUniformLocation(batch.program, 'u_modelViewMatrix'),
         false,
         modelViewMatrix);
+      gl.uniform1i(gl.getUniformLocation(batch.program, "u_texture_a"), 0);
+      gl.uniform1i(gl.getUniformLocation(batch.program, "u_texture_b"), 1);
 
       gl.bindBuffer(gl.ARRAY_BUFFER, batch.vertexBuffer);
       // Position
@@ -546,6 +562,22 @@ class MainView {
       // Color
       gl.vertexAttribPointer(4, 4, gl.UNSIGNED_BYTE, true, 20, 16);
       gl.enableVertexAttribArray(4);
+
+      for (let i = 0; i < 2; ++i) {
+        gl.activeTexture(gl.TEXTURE0 + i);
+        let texture = batch.textures[0];
+        if (texture && texture.texture) {
+          gl.bindTexture(gl.TEXTURE_2D, texture.texture);
+          gl.uniform2f(
+            gl.getUniformLocation(
+              batch.program,
+              i == 0 ? "u_texture_a_inv_size" : "u_texture_b_inv_size"),
+            1 / texture.width,
+            1 / texture.height);
+        } else {
+          gl.bindTexture(gl.TEXTURE_2D, null);
+        }
+      }
 
       gl.drawArrays(batch.mode, 0, batch.count);
     }

@@ -5,6 +5,7 @@ mod glsl_vec3_constant;
 pub mod rcp;
 pub mod shader_state;
 mod su8;
+pub mod texture;
 mod to_expr;
 
 const FLAGS_UNLIT: u8 = 0;

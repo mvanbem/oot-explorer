@@ -519,16 +519,11 @@ impl DisplayListInterpreter {
         self.unique_textures.len()
     }
 
-    pub fn iter_textures(&self) -> std::collections::hash_set::Iter<'_, TextureDescriptor> {
+    pub fn iter_textures(&self) -> impl Iterator<Item = &TextureDescriptor> + '_ {
         self.unique_textures.iter()
     }
 
-    pub fn for_each_batch<F>(&mut self, mut f: F)
-    where
-        F: FnMut(&Batch),
-    {
-        for batch in self.batches_by_shader_state.values() {
-            f(batch)
-        }
+    pub fn iter_batches(&self) -> impl Iterator<Item = &Batch> + '_ {
+        self.batches_by_shader_state.values()
     }
 }

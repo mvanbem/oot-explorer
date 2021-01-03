@@ -1,10 +1,5 @@
 import * as core from './oot_explorer_web.js';
 
-const CORE_CONTEXT_CTOR = (async () => {
-  await core.default();
-  return (gl, rom) => new core.Context(gl, rom);
-})();
-
 let vec3 = glMatrix.vec3;
 let mat4 = glMatrix.mat4;
 
@@ -30,6 +25,10 @@ window.addEventListener('DOMContentLoaded', async () => {
     await RomStorage.clear();
     window.location.reload();
   });
+
+  // This definitely happens before any MainView is constructed, so MainView is free to assume core
+  // is safe to use.
+  await core.default();
 
   let rom = await RomStorage.load();
   if (rom === null) {
@@ -321,17 +320,6 @@ function glInitShader(gl, type, source) {
   }
 }
 
-function glInitProgram(gl, vertexShaderSource, fragmentShaderSource) {
-  let program = gl.createProgram();
-  gl.attachShader(program, glInitShader(gl, gl.VERTEX_SHADER, vertexShaderSource));
-  gl.attachShader(program, glInitShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource));
-  gl.linkProgram(program);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    throw new Error('failed to link program: ' + gl.getProgramInfoLog(program));
-  }
-  return program;
-}
-
 class MainView {
   constructor({ rom }) {
     this.canvas = $t('canvas');
@@ -395,6 +383,12 @@ class MainView {
         e.preventDefault();
         return;
       }
+
+      if (key === 'PageDown') {
+        this.changeScene(this.sceneIndex + 1);
+      } else if (key === 'PageUp') {
+        this.changeScene(this.sceneIndex - 1);
+      }
     });
     window.addEventListener('keyup', e => {
       let key = e.code;
@@ -415,47 +409,101 @@ class MainView {
       pitch: 0,
     };
 
+    this.ctx = new core.Context(this.gl, new Uint8Array(rom));
     this.batches = null;
-    this.asyncInit(rom);
-    window.requestAnimationFrame(this.step.bind(this));
+    this.sceneIndex = null;
+    this.currentResolves = [];
+    this.nextResolves = [];
+
+    this.changeScene(0);
+
+    window.requestAnimationFrame(timestamp => this.step(timestamp));
   }
 
-  async asyncInit(rom) {
+  nextStep() {
+    return new Promise(resolve => this.nextResolves.push(resolve));
+  }
+
+  async changeScene(sceneIndex) {
     let gl = this.gl;
-    let contextCtor = await CORE_CONTEXT_CTOR;
+    this.sceneIndex = sceneIndex;
+
+    Status.show('Processing scene...');
+    await this.nextStep();
 
     let t1 = performance.now();
-    Status.show('Processing scene...');
-    let ctx = contextCtor(gl, new Uint8Array(rom));
+    let processedScene = this.ctx.processScene(sceneIndex);
 
-    this.batches = [];
-    for (let batch of ctx.processScene(0)) {
-      let textures = [];
+    // Compile shaders for all batches.
+    let vertexShader = glInitShader(gl, gl.VERTEX_SHADER, VERTEX_SHADER_SOURCE);
+    let fragmentShaders = [];
+    for (let batch of processedScene) {
+      let shader = gl.createShader(gl.FRAGMENT_SHADER);
+      gl.shaderSource(shader, batch.fragmentShader);
+      gl.compileShader(shader);
+      fragmentShaders.push(shader);
+    }
+
+    // Load vertex buffers and textures for all batches.
+    let vertexBuffers = [];
+    let textures = [];
+    for (let batch of processedScene) {
+      let buffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, batch.vertexData, gl.STATIC_DRAW);
+      vertexBuffers.push(buffer);
+
+      let batch_textures = [];
       for (let texture of batch.textures) {
-        textures.push({
-          texture: ctx.getTexture(texture.key),
+        batch_textures.push({
+          texture: this.ctx.getTexture(texture.key),
           width: texture.width,
           height: texture.height,
         });
       }
+      textures.push(batch_textures);
+    }
 
+    // Link programs for all batches.
+    let programs = [];
+    for (let i = 0; i < processedScene.length; ++i) {
+      let program = gl.createProgram();
+      gl.attachShader(program, vertexShader);
+      gl.attachShader(program, fragmentShaders[i]);
+      gl.linkProgram(program);
+      programs.push(program);
+    }
+
+    // Assemble all batches to be drawn.
+    this.batches = [];
+    for (let i = 0; i < processedScene.length; ++i) {
+      if (!gl.getProgramParameter(programs[i], gl.LINK_STATUS)) {
+        console.log('program info log', gl.getProgramInfoLog(programs[i]));
+        console.log('vertex shader info log', gl.getShaderInfoLog(vertexShader));
+        console.log('fragment shader info log', gl.getProgramInfoLog(fragmentShaders[i]));
+        throw new Error('failed to link GL program');
+      }
+
+      let batch = processedScene[i];
       this.batches.push({
-        program: glInitProgram(gl, VERTEX_SHADER_SOURCE, batch.fragmentShader),
-        vertexBuffer: (() => {
-          let buffer = gl.createBuffer();
-          gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-          gl.bufferData(gl.ARRAY_BUFFER, batch.vertexData, gl.STATIC_DRAW);
-          return buffer;
-        })(),
+        program: programs[i],
+        vertexBuffer: vertexBuffers[i],
         mode: gl.TRIANGLES,
         count: batch.vertexData.byteLength / 20,
-        textures,
+        textures: textures[i],
       });
     }
-    console.log(this.batches);
 
     let t2 = performance.now();
-    Status.show('Processed scene in ' + Math.round(t2 - t1) + ' ms');
+
+    Status.show('Rendering first frame... (this is slow on Chrome on Windows)');
+    await this.nextStep();
+
+    let t3 = performance.now();
+
+    Status.show('Ready. ('
+      + 'processing: ' + Math.round(t2 - t1) + ' ms, '
+      + 'first frame: ' + Math.round(t3 - t2) + ' ms)');
   }
 
   updateDimensions() {
@@ -472,7 +520,13 @@ class MainView {
   }
 
   step(timestamp) {
-    let abort = false;
+    // Trigger anything that was waiting for a new frame.
+    for (let resolve of this.currentResolves) {
+      resolve();
+    }
+    this.currentResolves = this.nextResolves;
+    this.nextResolves = [];
+
     this.updateDimensions();
 
     if (this.prevTimestamp !== undefined) {
@@ -514,7 +568,7 @@ class MainView {
 
     gl.depthFunc(gl.LEQUAL);
     gl.frontFace(gl.CCW);
-    gl.disable(gl.CULL_FACE);
+    gl.enable(gl.CULL_FACE);
 
     let projectionMatrix = mat4.create();
     mat4.perspective(

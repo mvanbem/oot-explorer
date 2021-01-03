@@ -456,7 +456,8 @@ class MainView {
       let batch_textures = [];
       for (let texture of batch.textures) {
         batch_textures.push({
-          texture: this.ctx.getTexture(texture.key),
+          texture: this.ctx.getTexture(texture.textureKey),
+          sampler: this.ctx.getSampler(texture.samplerKey),
           width: texture.width,
           height: texture.height,
         });
@@ -475,24 +476,28 @@ class MainView {
     }
 
     // Assemble all batches to be drawn.
-    this.batches = [];
+    let opaqueBatches = [];
+    let translucentBatches = [];
     for (let i = 0; i < processedScene.length; ++i) {
       if (!gl.getProgramParameter(programs[i], gl.LINK_STATUS)) {
-        console.log('program info log', gl.getProgramInfoLog(programs[i]));
-        console.log('vertex shader info log', gl.getShaderInfoLog(vertexShader));
-        console.log('fragment shader info log', gl.getProgramInfoLog(fragmentShaders[i]));
+        console.log('program info log:', gl.getProgramInfoLog(programs[i]));
+        console.log('vertex shader info log:', gl.getShaderInfoLog(vertexShader));
+        console.log('fragment shader info log:', gl.getShaderInfoLog(fragmentShaders[i]));
         throw new Error('failed to link GL program');
       }
 
       let batch = processedScene[i];
-      this.batches.push({
+      let collection = batch.translucent ? translucentBatches : opaqueBatches;
+      collection.push({
         program: programs[i],
         vertexBuffer: vertexBuffers[i],
+        translucent: batch.translucent,
         mode: gl.TRIANGLES,
         count: batch.vertexData.byteLength / 20,
         textures: textures[i],
       });
     }
+    this.batches = [].concat(opaqueBatches, translucentBatches);
 
     let t2 = performance.now();
 
@@ -568,7 +573,6 @@ class MainView {
 
     gl.depthFunc(gl.LEQUAL);
     gl.frontFace(gl.CCW);
-    gl.enable(gl.CULL_FACE);
 
     let projectionMatrix = mat4.create();
     mat4.perspective(
@@ -588,6 +592,16 @@ class MainView {
       gl.enable(gl.DEPTH_TEST);
       gl.depthMask(true);
       gl.disable(gl.BLEND);
+
+      if (batch.translucent) {
+        gl.disable(gl.CULL_FACE);
+        // TODO: This is extremely fake. The RDP has blending parameters.
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      } else {
+        gl.enable(gl.CULL_FACE);
+        gl.disable(gl.BLEND);
+      }
 
       gl.uniformMatrix4fv(
         gl.getUniformLocation(batch.program, 'u_projectionMatrix'),
@@ -628,8 +642,10 @@ class MainView {
               i == 0 ? "u_texture_a_inv_size" : "u_texture_b_inv_size"),
             1 / texture.width,
             1 / texture.height);
+          gl.bindSampler(i, texture.sampler);
         } else {
           gl.bindTexture(gl.TEXTURE_2D, null);
+          gl.bindSampler(i, null);
         }
       }
 

@@ -5,9 +5,7 @@ use scoped_owner::ScopedOwner;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use web_sys::{
-    ExtTextureFilterAnisotropic, WebGl2RenderingContext, WebGl2RenderingContext as Gl, WebGlTexture,
-};
+use web_sys::{WebGl2RenderingContext, WebGl2RenderingContext as Gl, WebGlTexture};
 
 pub fn opaque_key(descriptor: &TextureDescriptor) -> u32 {
     let mut hasher = DefaultHasher::new();
@@ -50,27 +48,6 @@ fn create_gl_texture(gl: &WebGl2RenderingContext, decoded: DecodedTexture) -> We
     )
     .unwrap();
     gl.generate_mipmap(Gl::TEXTURE_2D);
-
-    gl.tex_parameteri(Gl::TEXTURE_2D, Gl::TEXTURE_MAG_FILTER, Gl::LINEAR as i32);
-    gl.tex_parameteri(
-        Gl::TEXTURE_2D,
-        Gl::TEXTURE_MIN_FILTER,
-        Gl::LINEAR_MIPMAP_LINEAR as i32,
-    );
-
-    // TODO: Figure out how to set these in coordination with emulated RDP state.
-    gl.tex_parameteri(Gl::TEXTURE_2D, Gl::TEXTURE_WRAP_S, Gl::REPEAT as i32);
-    gl.tex_parameteri(Gl::TEXTURE_2D, Gl::TEXTURE_WRAP_T, Gl::REPEAT as i32);
-
-    // // TODO: Check that the extension is enabled.
-    // gl.tex_parameterf(
-    //     Gl::TEXTURE_2D,
-    //     ExtTextureFilterAnisotropic::TEXTURE_MAX_ANISOTROPY_EXT,
-    //     gl.get_parameter(ExtTextureFilterAnisotropic::TEXTURE_MAX_ANISOTROPY_EXT)
-    //         .unwrap()
-    //         .as_f64()
-    //         .unwrap() as f32,
-    // );
 
     texture
 }

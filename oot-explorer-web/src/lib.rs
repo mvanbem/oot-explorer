@@ -12,10 +12,12 @@ use scoped_owner::ScopedOwner;
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{WebGl2RenderingContext, WebGlTexture};
+use web_sys::{WebGl2RenderingContext, WebGlSampler, WebGlTexture};
 
+mod sampler_cache;
 mod texture_cache;
 
+use sampler_cache::SamplerCache;
 use texture_cache::TextureCache;
 
 #[wasm_bindgen(start)]
@@ -50,6 +52,7 @@ pub struct Context {
     gl: WebGl2RenderingContext,
     rom_data: Box<[u8]>,
     texture_cache: TextureCache,
+    sampler_cache: SamplerCache,
 }
 
 #[wasm_bindgen]
@@ -60,6 +63,7 @@ impl Context {
             gl,
             rom_data,
             texture_cache: TextureCache::new(),
+            sampler_cache: SamplerCache::new(),
         }
     }
 
@@ -69,6 +73,7 @@ impl Context {
             ref gl,
             ref rom_data,
             ref mut texture_cache,
+            ref mut sampler_cache,
         } = self;
         let rom = Rom::new(rom_data);
         ScopedOwner::with_scope(|scope| {
@@ -90,9 +95,10 @@ impl Context {
 
             let js_result = Array::new();
             for batch in dlist_interp.iter_batches() {
-                // Fetch all referenced textures into the texture cache.
-                for descriptor in &batch.textures {
-                    texture_cache.get_or_decode(gl, scope, &mut fs, descriptor);
+                // Cache all referenced textures and samplers
+                for texture_usage in &batch.textures {
+                    texture_cache.get_or_decode(gl, scope, &mut fs, &texture_usage.descriptor);
+                    sampler_cache.get_or_create(gl, texture_usage);
                 }
 
                 let js_batch = Object::new();
@@ -111,6 +117,13 @@ impl Context {
                 )
                 .unwrap_throw();
 
+                Reflect::set(
+                    &js_batch,
+                    &JsValue::from_str("translucent"),
+                    &JsValue::from_bool(batch.translucent),
+                )
+                .unwrap_throw();
+
                 let js_textures = Array::new();
                 for texture in &batch.textures {
                     let js_texture = Object::new();
@@ -118,22 +131,29 @@ impl Context {
 
                     Reflect::set(
                         &js_texture,
-                        &JsValue::from_str("key"),
-                        &texture_cache::opaque_key(texture).into(),
+                        &JsValue::from_str("textureKey"),
+                        &texture_cache::opaque_key(&texture.descriptor).into(),
+                    )
+                    .unwrap_throw();
+
+                    Reflect::set(
+                        &js_texture,
+                        &JsValue::from_str("samplerKey"),
+                        &sampler_cache::opaque_key(&texture).into(),
                     )
                     .unwrap_throw();
 
                     Reflect::set(
                         &js_texture,
                         &JsValue::from_str("width"),
-                        &(texture.render_width as u32).into(),
+                        &(texture.descriptor.render_width as u32).into(),
                     )
                     .unwrap_throw();
 
                     Reflect::set(
                         &js_texture,
                         &JsValue::from_str("height"),
-                        &(texture.render_height as u32).into(),
+                        &(texture.descriptor.render_height as u32).into(),
                     )
                     .unwrap_throw();
                 }
@@ -151,6 +171,11 @@ impl Context {
     #[wasm_bindgen(js_name = "getTexture")]
     pub fn get_texture(&self, key: u32) -> Option<WebGlTexture> {
         self.texture_cache.get_with_key(key).cloned()
+    }
+
+    #[wasm_bindgen(js_name = "getSampler")]
+    pub fn get_sampler(&self, key: u32) -> Option<WebGlSampler> {
+        self.sampler_cache.get_with_key(key).cloned()
     }
 }
 
@@ -212,10 +237,10 @@ fn examine_room<'a>(
                 MeshVariant::Simple(mesh) => {
                     for entry in mesh.entries(&cpu_ctx) {
                         if let Ok(Some(dlist)) = entry.opaque_display_list(&cpu_ctx) {
-                            dlist_interp.interpret(&rsp_ctx, dlist);
+                            dlist_interp.interpret(&rsp_ctx, false, dlist);
                         }
                         if let Ok(Some(dlist)) = entry.translucent_display_list(&cpu_ctx) {
-                            dlist_interp.interpret(&rsp_ctx, dlist);
+                            dlist_interp.interpret(&rsp_ctx, true, dlist);
                         }
                     }
                 }
@@ -223,10 +248,10 @@ fn examine_room<'a>(
                 MeshVariant::Clipped(mesh) => {
                     for entry in mesh.entries(&cpu_ctx) {
                         if let Ok(Some(dlist)) = entry.opaque_display_list(&cpu_ctx) {
-                            dlist_interp.interpret(&rsp_ctx, dlist);
+                            dlist_interp.interpret(&rsp_ctx, false, dlist);
                         }
                         if let Ok(Some(dlist)) = entry.translucent_display_list(&cpu_ctx) {
-                            dlist_interp.interpret(&rsp_ctx, dlist);
+                            dlist_interp.interpret(&rsp_ctx, true, dlist);
                         }
                     }
                 }

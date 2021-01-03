@@ -50,10 +50,16 @@ impl DisplayListInterpreter {
         self.batches_by_shader_state.clear();
     }
 
-    pub fn interpret<'a>(&mut self, ctx: &SegmentCtx<'a>, dlist: DisplayList<'a>) {
+    pub fn interpret<'a>(
+        &mut self,
+        ctx: &SegmentCtx<'a>,
+        translucent: bool,
+        dlist: DisplayList<'a>,
+    ) {
         self.interpret_internal(
             ctx,
             dlist,
+            translucent,
             &mut RcpState {
                 vertex_slots: [None; 32],
                 geometry_mode: GeometryMode::default(),
@@ -61,6 +67,7 @@ impl DisplayListInterpreter {
                 rdp_other_mode: RdpOtherMode {
                     hi: OtherModeH::CYC_2CYCLE | OtherModeH::TT_RGBA16,
                 },
+                env: None,
                 combiner: None,
                 texture_src: None,
                 tiles: Default::default(),
@@ -81,6 +88,7 @@ impl DisplayListInterpreter {
         &mut self,
         ctx: &SegmentCtx<'a>,
         dlist: DisplayList<'a>,
+        translucent: bool,
         state: &mut RcpState,
         depth: usize,
     ) {
@@ -144,19 +152,25 @@ impl DisplayListInterpreter {
                 Instruction::BranchZ { .. } => {
                     let addr = SegmentAddr(state.rdp_half_1.unwrap());
                     if let Ok(data) = ctx.resolve(addr) {
-                        self.interpret_internal(ctx, DisplayList::new(data), state, depth + 1);
+                        self.interpret_internal(
+                            ctx,
+                            DisplayList::new(data),
+                            translucent,
+                            state,
+                            depth + 1,
+                        );
                     } else {
                         *self.unmapped_calls.entry(addr).or_default() += 1;
                     }
                 }
                 // 0x05
                 Instruction::Tri1 { index } => {
-                    self.process_triangle(state, index);
+                    self.process_triangle(translucent, state, index);
                 }
                 // 0x06
                 Instruction::Tri2 { index_a, index_b } => {
-                    self.process_triangle(state, index_a);
-                    self.process_triangle(state, index_b);
+                    self.process_triangle(translucent, state, index_a);
+                    self.process_triangle(translucent, state, index_b);
                 }
                 // 0xd7
                 Instruction::Texture {
@@ -189,7 +203,13 @@ impl DisplayListInterpreter {
                 // 0xde
                 Instruction::Dl { jump, ptr } => {
                     if let Ok(data) = ctx.resolve(ptr) {
-                        self.interpret_internal(ctx, DisplayList::new(data), state, depth + 1);
+                        self.interpret_internal(
+                            ctx,
+                            DisplayList::new(data),
+                            translucent,
+                            state,
+                            depth + 1,
+                        );
                     } else {
                         *self.unmapped_calls.entry(ptr).or_default() += 1;
                     }
@@ -327,8 +347,8 @@ impl DisplayListInterpreter {
                     // TODO: Track the primitive color
                 }
                 // 0xfb
-                Instruction::SetEnvColor { .. } => {
-                    // TODO: Track the environment color
+                Instruction::SetEnvColor { r, g, b, a } => {
+                    state.env = Some([r, g, b, a]);
                 }
                 // 0xfc
                 Instruction::SetCombine {
@@ -456,13 +476,13 @@ impl DisplayListInterpreter {
         buf
     }
 
-    fn process_triangle(&mut self, state: &mut RcpState, index: [u8; 3]) {
+    fn process_triangle(&mut self, translucent: bool, state: &mut RcpState, index: [u8; 3]) {
         // Print each unique shader state as it is encountered.
-        let shader_state = state.shader_state();
+        let shader_state = state.to_shader_state();
         let batch = self
             .batches_by_shader_state
             .entry(shader_state.clone())
-            .or_insert_with(|| Batch::for_shader_state(&shader_state));
+            .or_insert_with(|| Batch::for_shader_state(&shader_state, translucent));
 
         // Track unique textures used.
         for texture in shader_state
@@ -470,10 +490,10 @@ impl DisplayListInterpreter {
             .iter()
             .chain(shader_state.texture_b.iter())
         {
-            match texture.source {
+            match texture.descriptor.source {
                 TmemSource::Undefined => (),
                 _ => {
-                    self.unique_textures.insert(texture.clone());
+                    self.unique_textures.insert(texture.descriptor.clone());
                 }
             }
         }

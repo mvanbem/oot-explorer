@@ -122,9 +122,15 @@ fn examine_room<'a>(
     for header in room.headers() {
         match header {
             RoomHeader::Mesh(header) => {
-                enumerate_meshes(&ctx, scene_index, room_index, header, |dlist| {
-                    dlist_interp.interpret(&ctx, dlist);
-                });
+                enumerate_meshes(
+                    &ctx,
+                    scene_index,
+                    room_index,
+                    header,
+                    |translucent, dlist| {
+                        dlist_interp.interpret(&ctx, translucent, dlist);
+                    },
+                );
             }
             _ => (),
         }
@@ -138,13 +144,13 @@ fn enumerate_meshes<'a, F>(
     header: MeshHeader<'a>,
     mut f: F,
 ) where
-    F: FnMut(DisplayList),
+    F: FnMut(bool, DisplayList),
 {
     match header.mesh(&ctx).variant() {
         MeshVariant::Simple(mesh) => {
             for entry in mesh.entries(&ctx) {
                 match entry.opaque_display_list(ctx) {
-                    Ok(Some(dlist)) => f(dlist),
+                    Ok(Some(dlist)) => f(false, dlist),
                     Ok(None) => (),
                     Err(SegmentResolveError::Unmapped { .. }) => {
                         eprintln!(
@@ -156,7 +162,7 @@ fn enumerate_meshes<'a, F>(
                     }
                 }
                 match entry.translucent_display_list(ctx) {
-                    Ok(Some(dlist)) => f(dlist),
+                    Ok(Some(dlist)) => f(true, dlist),
                     Ok(None) => (),
                     Err(SegmentResolveError::Unmapped { .. }) => {
                         eprintln!(
@@ -173,7 +179,7 @@ fn enumerate_meshes<'a, F>(
         MeshVariant::Clipped(mesh) => {
             for entry in mesh.entries(&ctx) {
                 match entry.opaque_display_list(ctx) {
-                    Ok(Some(dlist)) => f(dlist),
+                    Ok(Some(dlist)) => f(false, dlist),
                     Ok(None) => (),
                     Err(SegmentResolveError::Unmapped { .. }) => {
                         eprintln!(
@@ -185,7 +191,7 @@ fn enumerate_meshes<'a, F>(
                     }
                 }
                 match entry.translucent_display_list(ctx) {
-                    Ok(Some(dlist)) => f(dlist),
+                    Ok(Some(dlist)) => f(true, dlist),
                     Ok(None) => (),
                     Err(SegmentResolveError::Unmapped { .. }) => {
                         eprintln!(

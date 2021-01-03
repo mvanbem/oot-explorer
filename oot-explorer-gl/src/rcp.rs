@@ -6,7 +6,9 @@ use oot_explorer_core::gbi::{
 use std::ops::Range;
 use thiserror::Error;
 
-use crate::shader_state::{PaletteSource, ShaderState, TextureDescriptor};
+use crate::shader_state::{
+    PaletteSource, ShaderState, TexCoordParams, TextureDescriptor, TextureUsage,
+};
 
 #[derive(Debug)]
 pub struct RcpState {
@@ -14,6 +16,7 @@ pub struct RcpState {
     pub geometry_mode: GeometryMode,
     pub rdp_half_1: Option<u32>,
     pub rdp_other_mode: RdpOtherMode,
+    pub env: Option<[u8; 4]>,
     pub combiner: Option<CombinerState>,
     pub texture_src: Option<TextureSource>,
     pub tiles: [Tile; 8],
@@ -22,7 +25,7 @@ pub struct RcpState {
 }
 
 impl RcpState {
-    pub fn shader_state(&self) -> ShaderState {
+    pub fn to_shader_state(&self) -> ShaderState {
         let (texture_a, texture_b) = self.get_texture_state();
         ShaderState {
             two_cycle_mode: match self.rdp_other_mode.hi & OtherModeHMask::CYCLETYPE {
@@ -33,29 +36,30 @@ impl RcpState {
                     self
                 ),
             },
+            env: self.env.unwrap_or([0, 0, 0, 0]),
             combiner: self.combiner.as_ref().unwrap().clone(),
             texture_a,
             texture_b,
         }
     }
 
-    fn get_texture_state(&self) -> (Option<TextureDescriptor>, Option<TextureDescriptor>) {
-        // TODO: Support texture LOD.
-
+    fn get_texture_state(&self) -> (Option<TextureUsage>, Option<TextureUsage>) {
         if !self.rsp_texture_state.enable {
             return (None, None);
         }
 
+        // LOD is not implemented.
+        assert_eq!(
+            self.rdp_other_mode.hi & OtherModeHMask::TEXTLOD,
+            OtherModeH::TL_TILE,
+        );
+
         let tile_a = self.get_tile_state(self.rsp_texture_state.tile);
         let tile_b = self.get_tile_state((self.rsp_texture_state.tile + 1) & 0x7);
-        match self.rdp_other_mode.hi & OtherModeHMask::CYCLETYPE {
-            OtherModeH::CYC_1CYCLE => (tile_a, None),
-            OtherModeH::CYC_2CYCLE => (tile_a, tile_b),
-            _ => unreachable!(),
-        }
+        (tile_a, tile_b)
     }
 
-    fn get_tile_state(&self, tile: u8) -> Option<TextureDescriptor> {
+    fn get_tile_state(&self, tile: u8) -> Option<TextureUsage> {
         let tile = &self.tiles[tile as usize];
         let dimensions = tile.dimensions.as_ref()?;
         let attributes = tile.attributes.as_ref()?;
@@ -85,15 +89,29 @@ impl RcpState {
             }
             _ => PaletteSource::None,
         };
-        Some(TextureDescriptor {
-            source,
-            palette_source,
-            render_format: attributes.format,
-            render_depth: attributes.depth,
-            render_width: (((dimensions.s.end.0 - dimensions.s.start.0) >> 2) + 1) as usize,
-            render_height: (((dimensions.t.end.0 - dimensions.t.start.0) >> 2) + 1) as usize,
-            render_stride: attributes.stride as usize,
-            render_palette: attributes.palette,
+        Some(TextureUsage {
+            descriptor: TextureDescriptor {
+                source,
+                palette_source,
+                render_format: attributes.format,
+                render_depth: attributes.depth,
+                render_width: (((dimensions.s.end.0 - dimensions.s.start.0) >> 2) + 1) as usize,
+                render_height: (((dimensions.t.end.0 - dimensions.t.start.0) >> 2) + 1) as usize,
+                render_stride: attributes.stride as usize,
+                render_palette: attributes.palette,
+            },
+            params_s: TexCoordParams {
+                mirror: attributes.mirror_s,
+                mask: attributes.mask_s,
+                shift: attributes.shift_s,
+                clamp: attributes.clamp_s,
+            },
+            params_t: TexCoordParams {
+                mirror: attributes.mirror_t,
+                mask: attributes.mask_t,
+                shift: attributes.shift_t,
+                clamp: attributes.clamp_t,
+            },
         })
     }
 }

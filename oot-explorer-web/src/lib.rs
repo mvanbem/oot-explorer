@@ -1,4 +1,3 @@
-use js_sys::{Array, Object, Reflect};
 use oot_explorer_core::fs::LazyFileSystem;
 use oot_explorer_core::header::{RoomHeader, SceneHeader};
 use oot_explorer_core::mesh::MeshVariant;
@@ -9,9 +8,8 @@ use oot_explorer_core::segment::{Segment, SegmentCtx};
 use oot_explorer_core::versions;
 use oot_explorer_gl::display_list_interpreter::DisplayListInterpreter;
 use scoped_owner::ScopedOwner;
-use std::convert::TryInto;
+use serde::Serialize;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
 use web_sys::{WebGl2RenderingContext, WebGlSampler, WebGlTexture};
 
 mod sampler_cache;
@@ -25,34 +23,31 @@ pub fn main() {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
 }
 
-fn new_array_buffer(data: &[u8]) -> js_sys::ArrayBuffer {
-    let start = &data[0] as *const u8 as usize;
-    let end = start + data.len();
-    let src = js_sys::Uint8Array::new(
-        &wasm_bindgen::memory()
-            .dyn_into::<js_sys::WebAssembly::Memory>()
-            .unwrap_throw()
-            .buffer()
-            .dyn_into::<js_sys::ArrayBuffer>()
-            .unwrap_throw(),
-    )
-    .slice(
-        start.try_into().unwrap_throw(),
-        end.try_into().unwrap_throw(),
-    );
-
-    let dst_buffer = js_sys::ArrayBuffer::new(data.len().try_into().unwrap_throw());
-    let dst_typed_array = js_sys::Uint8Array::new(&dst_buffer);
-    dst_typed_array.set(&src, 0);
-    dst_buffer
-}
-
 #[wasm_bindgen]
 pub struct Context {
     gl: WebGl2RenderingContext,
     rom_data: Box<[u8]>,
     texture_cache: TextureCache,
     sampler_cache: SamplerCache,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcessSceneBatch<'a> {
+    fragment_shader: &'a str,
+    #[serde(with = "serde_bytes")]
+    vertex_data: &'a [u8],
+    translucent: bool,
+    textures: Vec<ProcessSceneTexture>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcessSceneTexture {
+    texture_key: u32,
+    sampler_key: u32,
+    width: u32,
+    height: u32,
 }
 
 #[wasm_bindgen]
@@ -68,7 +63,7 @@ impl Context {
     }
 
     #[wasm_bindgen(js_name = "processScene")]
-    pub fn process_scene(&mut self, scene_index: usize) -> Array {
+    pub fn process_scene(&mut self, scene_index: usize) -> JsValue {
         let Context {
             ref gl,
             ref rom_data,
@@ -93,78 +88,31 @@ impl Context {
             println!("total_lit_verts: {}", dlist_interp.total_lit_verts());
             println!("total_unlit_verts: {}", dlist_interp.total_unlit_verts());
 
-            let js_result = Array::new();
+            let mut batches = vec![];
             for batch in dlist_interp.iter_batches() {
-                // Cache all referenced textures and samplers
-                for texture_usage in &batch.textures {
-                    texture_cache.get_or_decode(gl, scope, &mut fs, &texture_usage.descriptor);
-                    sampler_cache.get_or_create(gl, texture_usage);
+                let mut textures = vec![];
+                for texture_state in &batch.textures {
+                    // Cache all referenced textures and samplers.
+                    texture_cache.get_or_decode(gl, scope, &mut fs, &texture_state.descriptor);
+                    sampler_cache.get_or_create(gl, &texture_state.params);
+
+                    textures.push(ProcessSceneTexture {
+                        texture_key: texture_cache::opaque_key(&texture_state.descriptor),
+                        sampler_key: sampler_cache::opaque_key(&texture_state.params),
+                        width: texture_state.descriptor.render_width as u32,
+                        height: texture_state.descriptor.render_height as u32,
+                    });
                 }
 
-                let js_batch = Object::new();
-
-                Reflect::set(
-                    &js_batch,
-                    &JsValue::from_str("fragmentShader"),
-                    &JsValue::from_str(&batch.fragment_shader),
-                )
-                .unwrap_throw();
-
-                Reflect::set(
-                    &js_batch,
-                    &JsValue::from_str("vertexData"),
-                    &new_array_buffer(&batch.vertex_data),
-                )
-                .unwrap_throw();
-
-                Reflect::set(
-                    &js_batch,
-                    &JsValue::from_str("translucent"),
-                    &JsValue::from_bool(batch.translucent),
-                )
-                .unwrap_throw();
-
-                let js_textures = Array::new();
-                for texture in &batch.textures {
-                    let js_texture = Object::new();
-                    js_textures.push(&js_texture);
-
-                    Reflect::set(
-                        &js_texture,
-                        &JsValue::from_str("textureKey"),
-                        &texture_cache::opaque_key(&texture.descriptor).into(),
-                    )
-                    .unwrap_throw();
-
-                    Reflect::set(
-                        &js_texture,
-                        &JsValue::from_str("samplerKey"),
-                        &sampler_cache::opaque_key(&texture).into(),
-                    )
-                    .unwrap_throw();
-
-                    Reflect::set(
-                        &js_texture,
-                        &JsValue::from_str("width"),
-                        &(texture.descriptor.render_width as u32).into(),
-                    )
-                    .unwrap_throw();
-
-                    Reflect::set(
-                        &js_texture,
-                        &JsValue::from_str("height"),
-                        &(texture.descriptor.render_height as u32).into(),
-                    )
-                    .unwrap_throw();
-                }
-
-                Reflect::set(&js_batch, &JsValue::from_str("textures"), &js_textures)
-                    .unwrap_throw();
-
-                js_result.push(&js_batch);
+                batches.push(ProcessSceneBatch {
+                    fragment_shader: &batch.fragment_shader,
+                    vertex_data: &batch.vertex_data,
+                    translucent: batch.translucent,
+                    textures,
+                });
             }
 
-            js_result
+            serde_wasm_bindgen::to_value(&batches).unwrap()
         })
     }
 

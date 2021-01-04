@@ -1,12 +1,16 @@
-use crate::segment::SegmentAddr;
-use crate::slice::StructReader;
 use byteorder::{BigEndian, ReadBytesExt};
 use num_traits::FromPrimitive;
+use std::fmt::{self, Debug, Formatter};
+use std::ops::{BitAnd, BitAndAssign, Not};
+
+use crate::segment::SegmentAddr;
+use crate::slice::StructReader;
 
 #[derive(Clone, Copy)]
 pub struct DisplayList<'a> {
     data: &'a [u8],
 }
+
 impl<'a> DisplayList<'a> {
     pub fn new(data: &'a [u8]) -> DisplayList<'a> {
         DisplayList { data }
@@ -174,8 +178,10 @@ pub enum Instruction {
         ptr: SegmentAddr,
     },
 }
+
 impl Instruction {
     pub const SIZE: usize = 8;
+
     pub fn parse(data: &[u8]) -> Instruction {
         let u32_a = (&data[..]).read_u32::<BigEndian>().unwrap() & 0x00ff_ffff;
         let u32_b = (&data[4..]).read_u32::<BigEndian>().unwrap();
@@ -335,15 +341,18 @@ impl Instruction {
 /// A fixed-point 0.16 number.
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Qu0_16(pub u16);
-impl std::fmt::Debug for Qu0_16 {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+
+impl Debug for Qu0_16 {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "Qu0_16({})", self.as_f32())
     }
 }
+
 impl Qu0_16 {
     pub fn as_f32(self) -> f32 {
         self.0 as f32 / 65536.0
     }
+
     pub fn as_f64(self) -> f64 {
         self.0 as f64 / 65536.0
     }
@@ -352,15 +361,18 @@ impl Qu0_16 {
 /// A fixed-point 10.2 number.
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Qu10_2(pub u16);
-impl std::fmt::Debug for Qu10_2 {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+
+impl Debug for Qu10_2 {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "Qu10_2({})", self.as_f32())
     }
 }
+
 impl Qu10_2 {
     pub fn as_f32(self) -> f32 {
         (self.0 & 0x0fff) as f32 / 4.0
     }
+
     pub fn as_f64(self) -> f64 {
         (self.0 & 0x0fff) as f64 / 4.0
     }
@@ -369,24 +381,39 @@ impl Qu10_2 {
 /// A fixed-point 10.2 number.
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Qu1_11(pub u16);
-impl std::fmt::Debug for Qu1_11 {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+
+impl Debug for Qu1_11 {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "Qu1_11({})", self.as_f32())
     }
 }
+
 impl Qu1_11 {
     pub fn as_f32(self) -> f32 {
         (self.0 & 0x0fff) as f32 / 2048.0
     }
+
     pub fn as_f64(self) -> f64 {
         (self.0 & 0x0fff) as f64 / 2048.0
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    derive_more::BitAnd,
+    derive_more::BitAndAssign,
+    derive_more::BitOr,
+    derive_more::BitOrAssign,
+    derive_more::BitXor,
+    derive_more::BitXorAssign,
+)]
 pub struct MtxFlags(pub u8);
-impl std::fmt::Debug for MtxFlags {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+
+impl Debug for MtxFlags {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(
             f,
             "{} | {}",
@@ -407,6 +434,7 @@ impl std::fmt::Debug for MtxFlags {
         Ok(())
     }
 }
+
 impl MtxFlags {
     pub const NOPUSH: MtxFlags = MtxFlags(0x00);
     pub const PUSH: MtxFlags = MtxFlags(0x01);
@@ -423,40 +451,8 @@ impl MtxFlags {
         (self & mask) == mask
     }
 }
-impl std::ops::BitAnd for MtxFlags {
-    type Output = MtxFlags;
-    fn bitand(self, rhs: MtxFlags) -> MtxFlags {
-        MtxFlags(self.0 & rhs.0)
-    }
-}
-impl std::ops::BitAndAssign for MtxFlags {
-    fn bitand_assign(&mut self, rhs: MtxFlags) {
-        self.0 &= rhs.0;
-    }
-}
-impl std::ops::BitOr for MtxFlags {
-    type Output = MtxFlags;
-    fn bitor(self, rhs: MtxFlags) -> MtxFlags {
-        MtxFlags(self.0 | rhs.0)
-    }
-}
-impl std::ops::BitOrAssign for MtxFlags {
-    fn bitor_assign(&mut self, rhs: MtxFlags) {
-        self.0 |= rhs.0;
-    }
-}
-impl std::ops::BitXor for MtxFlags {
-    type Output = MtxFlags;
-    fn bitxor(self, rhs: MtxFlags) -> MtxFlags {
-        MtxFlags(self.0 ^ rhs.0)
-    }
-}
-impl std::ops::BitXorAssign for MtxFlags {
-    fn bitxor_assign(&mut self, rhs: MtxFlags) {
-        self.0 ^= rhs.0;
-    }
-}
-impl std::ops::Not for MtxFlags {
+
+impl Not for MtxFlags {
     type Output = MtxFlags;
     fn not(self) -> MtxFlags {
         self ^ MtxFlags::ALL
@@ -468,11 +464,13 @@ struct Separator {
     sep: &'static str,
     any: bool,
 }
+
 impl Separator {
     fn new(sep: &'static str) -> Separator {
         Separator { sep, any: false }
     }
-    fn write(&mut self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+
+    fn write(&mut self, f: &mut Formatter) -> fmt::Result {
         if self.any {
             write!(f, "{}", self.sep)
         } else {
@@ -480,15 +478,29 @@ impl Separator {
             Ok(())
         }
     }
+
     fn none(&self) -> bool {
         !self.any
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    derive_more::BitAnd,
+    derive_more::BitAndAssign,
+    derive_more::BitOr,
+    derive_more::BitOrAssign,
+    derive_more::BitXor,
+    derive_more::BitXorAssign,
+    derive_more::Not,
+)]
 pub struct GeometryMode(pub u32);
-impl std::fmt::Debug for GeometryMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+
+impl Debug for GeometryMode {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let mut sep = Separator::new(" | ");
         for name in [
             (GeometryMode::ZBUFFER, "ZBUFFER"),
@@ -526,11 +538,13 @@ impl std::fmt::Debug for GeometryMode {
         Ok(())
     }
 }
+
 impl Default for GeometryMode {
     fn default() -> GeometryMode {
         GeometryMode::CLIPPING
     }
 }
+
 impl GeometryMode {
     pub const ZBUFFER: GeometryMode = GeometryMode(0x0000_0001);
     pub const SHADE: GeometryMode = GeometryMode(0x0000_0004);
@@ -542,9 +556,11 @@ impl GeometryMode {
     pub const TEXTURE_GEN_LINEAR: GeometryMode = GeometryMode(0x0008_0000);
     pub const SHADING_SMOOTH: GeometryMode = GeometryMode(0x0020_0000);
     pub const CLIPPING: GeometryMode = GeometryMode(0x0080_0000);
+
     pub fn test(self, mask: GeometryMode) -> bool {
         (self.0 & mask.0) == mask.0
     }
+
     pub fn unknown(self) -> u32 {
         (self
             & !(GeometryMode::ZBUFFER
@@ -560,50 +576,24 @@ impl GeometryMode {
             .0
     }
 }
-impl std::ops::BitAnd for GeometryMode {
-    type Output = GeometryMode;
-    fn bitand(self, rhs: GeometryMode) -> GeometryMode {
-        GeometryMode(self.0 & rhs.0)
-    }
-}
-impl std::ops::BitAndAssign for GeometryMode {
-    fn bitand_assign(&mut self, rhs: GeometryMode) {
-        self.0 &= rhs.0;
-    }
-}
-impl std::ops::BitOr for GeometryMode {
-    type Output = GeometryMode;
-    fn bitor(self, rhs: GeometryMode) -> GeometryMode {
-        GeometryMode(self.0 | rhs.0)
-    }
-}
-impl std::ops::BitOrAssign for GeometryMode {
-    fn bitor_assign(&mut self, rhs: GeometryMode) {
-        self.0 |= rhs.0;
-    }
-}
-impl std::ops::BitXor for GeometryMode {
-    type Output = GeometryMode;
-    fn bitxor(self, rhs: GeometryMode) -> GeometryMode {
-        GeometryMode(self.0 ^ rhs.0)
-    }
-}
-impl std::ops::BitXorAssign for GeometryMode {
-    fn bitxor_assign(&mut self, rhs: GeometryMode) {
-        self.0 ^= rhs.0;
-    }
-}
-impl std::ops::Not for GeometryMode {
-    type Output = GeometryMode;
-    fn not(self) -> GeometryMode {
-        GeometryMode(!self.0)
-    }
-}
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    derive_more::BitAnd,
+    derive_more::BitAndAssign,
+    derive_more::BitOr,
+    derive_more::BitOrAssign,
+    derive_more::BitXor,
+    derive_more::BitXorAssign,
+    derive_more::Not,
+)]
 pub struct OtherModeL(pub u32);
-impl std::fmt::Debug for OtherModeL {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+
+impl Debug for OtherModeL {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let mut sep = Separator::new(" | ");
         for name in [
             match *self & OtherModeLMask::ALPHACOMPARE {
@@ -685,6 +675,7 @@ impl std::fmt::Debug for OtherModeL {
         Ok(())
     }
 }
+
 impl OtherModeL {
     pub const AC_NONE: OtherModeL = OtherModeL(0x0000_0000);
     pub const AC_THRESHOLD: OtherModeL = OtherModeL(0x0000_0001);
@@ -717,6 +708,7 @@ impl OtherModeL {
     pub fn test(self, mask: OtherModeL) -> bool {
         (self.0 & mask.0) == mask.0
     }
+
     pub fn unknown(self) -> u32 {
         (self
             & !(OtherModeLMask::ALPHACOMPARE
@@ -725,56 +717,31 @@ impl OtherModeL {
             .0
     }
 }
-impl std::ops::BitAnd for OtherModeL {
-    type Output = OtherModeL;
-    fn bitand(self, rhs: OtherModeL) -> OtherModeL {
-        OtherModeL(self.0 & rhs.0)
-    }
-}
+
 impl std::ops::BitAnd<OtherModeLMask> for OtherModeL {
     type Output = OtherModeL;
     fn bitand(self, rhs: OtherModeLMask) -> OtherModeL {
         OtherModeL(self.0 & rhs.0)
     }
 }
-impl std::ops::BitAndAssign for OtherModeL {
-    fn bitand_assign(&mut self, rhs: OtherModeL) {
-        self.0 &= rhs.0;
-    }
-}
-impl std::ops::BitOr for OtherModeL {
-    type Output = OtherModeL;
-    fn bitor(self, rhs: OtherModeL) -> OtherModeL {
-        OtherModeL(self.0 | rhs.0)
-    }
-}
-impl std::ops::BitOrAssign for OtherModeL {
-    fn bitor_assign(&mut self, rhs: OtherModeL) {
-        self.0 |= rhs.0;
-    }
-}
-impl std::ops::BitXor for OtherModeL {
-    type Output = OtherModeL;
-    fn bitxor(self, rhs: OtherModeL) -> OtherModeL {
-        OtherModeL(self.0 ^ rhs.0)
-    }
-}
-impl std::ops::BitXorAssign for OtherModeL {
-    fn bitxor_assign(&mut self, rhs: OtherModeL) {
-        self.0 ^= rhs.0;
-    }
-}
-impl std::ops::Not for OtherModeL {
-    type Output = OtherModeL;
-    fn not(self) -> OtherModeL {
-        OtherModeL(!self.0)
-    }
-}
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    derive_more::BitAnd,
+    derive_more::BitAndAssign,
+    derive_more::BitOr,
+    derive_more::BitOrAssign,
+    derive_more::BitXor,
+    derive_more::BitXorAssign,
+    derive_more::Not,
+)]
 pub struct OtherModeLMask(pub u32);
-impl std::fmt::Debug for OtherModeLMask {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+
+impl Debug for OtherModeLMask {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let mut sep = Separator::new(" | ");
         if self.test(OtherModeLMask::ALPHACOMPARE) {
             sep.write(f)?;
@@ -814,6 +781,7 @@ impl std::fmt::Debug for OtherModeLMask {
         Ok(())
     }
 }
+
 impl OtherModeLMask {
     pub const ALPHACOMPARE: OtherModeLMask = OtherModeLMask(0x0000_0003);
     pub const ZSRCSEL: OtherModeLMask = OtherModeLMask(0x0000_0003);
@@ -835,6 +803,7 @@ impl OtherModeLMask {
     pub fn test(self, mask: OtherModeLMask) -> bool {
         (self.0 & mask.0) == mask.0
     }
+
     pub fn unknown(self) -> u32 {
         (self
             & !(OtherModeLMask::ALPHACOMPARE
@@ -843,50 +812,24 @@ impl OtherModeLMask {
             .0
     }
 }
-impl std::ops::BitAnd for OtherModeLMask {
-    type Output = OtherModeLMask;
-    fn bitand(self, rhs: OtherModeLMask) -> OtherModeLMask {
-        OtherModeLMask(self.0 & rhs.0)
-    }
-}
-impl std::ops::BitAndAssign for OtherModeLMask {
-    fn bitand_assign(&mut self, rhs: OtherModeLMask) {
-        self.0 &= rhs.0;
-    }
-}
-impl std::ops::BitOr for OtherModeLMask {
-    type Output = OtherModeLMask;
-    fn bitor(self, rhs: OtherModeLMask) -> OtherModeLMask {
-        OtherModeLMask(self.0 | rhs.0)
-    }
-}
-impl std::ops::BitOrAssign for OtherModeLMask {
-    fn bitor_assign(&mut self, rhs: OtherModeLMask) {
-        self.0 |= rhs.0;
-    }
-}
-impl std::ops::BitXor for OtherModeLMask {
-    type Output = OtherModeLMask;
-    fn bitxor(self, rhs: OtherModeLMask) -> OtherModeLMask {
-        OtherModeLMask(self.0 ^ rhs.0)
-    }
-}
-impl std::ops::BitXorAssign for OtherModeLMask {
-    fn bitxor_assign(&mut self, rhs: OtherModeLMask) {
-        self.0 ^= rhs.0;
-    }
-}
-impl std::ops::Not for OtherModeLMask {
-    type Output = OtherModeLMask;
-    fn not(self) -> OtherModeLMask {
-        OtherModeLMask(!self.0)
-    }
-}
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    derive_more::BitAnd,
+    derive_more::BitAndAssign,
+    derive_more::BitOr,
+    derive_more::BitOrAssign,
+    derive_more::BitXor,
+    derive_more::BitXorAssign,
+    derive_more::Not,
+)]
 pub struct OtherModeH(pub u32);
-impl std::fmt::Debug for OtherModeH {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+
+impl Debug for OtherModeH {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let mut sep = Separator::new(" | ");
         for name in [
             match *self & OtherModeHMask::ALPHADITHER {
@@ -973,6 +916,7 @@ impl std::fmt::Debug for OtherModeH {
         Ok(())
     }
 }
+
 impl OtherModeH {
     pub const AD_PATTERN: OtherModeH = OtherModeH(0x0000_0000);
     pub const AD_NOTPATTERN: OtherModeH = OtherModeH(0x0000_0010);
@@ -1020,6 +964,7 @@ impl OtherModeH {
     pub fn test(self, mask: OtherModeH) -> bool {
         (self.0 & mask.0) == mask.0
     }
+
     pub fn unknown(self) -> u32 {
         (self
             & !(OtherModeHMask::ALPHADITHER
@@ -1037,61 +982,37 @@ impl OtherModeH {
             .0
     }
 }
-impl std::ops::BitAnd for OtherModeH {
-    type Output = OtherModeH;
-    fn bitand(self, rhs: OtherModeH) -> OtherModeH {
-        OtherModeH(self.0 & rhs.0)
-    }
-}
-impl std::ops::BitAnd<OtherModeHMask> for OtherModeH {
+
+impl BitAnd<OtherModeHMask> for OtherModeH {
     type Output = OtherModeH;
     fn bitand(self, rhs: OtherModeHMask) -> OtherModeH {
         OtherModeH(self.0 & rhs.0)
     }
 }
-impl std::ops::BitAndAssign for OtherModeH {
-    fn bitand_assign(&mut self, rhs: OtherModeH) {
-        self.0 &= rhs.0;
-    }
-}
-impl std::ops::BitAndAssign<OtherModeHMask> for OtherModeH {
+
+impl BitAndAssign<OtherModeHMask> for OtherModeH {
     fn bitand_assign(&mut self, rhs: OtherModeHMask) {
         self.0 &= rhs.0;
     }
 }
-impl std::ops::BitOr for OtherModeH {
-    type Output = OtherModeH;
-    fn bitor(self, rhs: OtherModeH) -> OtherModeH {
-        OtherModeH(self.0 | rhs.0)
-    }
-}
-impl std::ops::BitOrAssign for OtherModeH {
-    fn bitor_assign(&mut self, rhs: OtherModeH) {
-        self.0 |= rhs.0;
-    }
-}
-impl std::ops::BitXor for OtherModeH {
-    type Output = OtherModeH;
-    fn bitxor(self, rhs: OtherModeH) -> OtherModeH {
-        OtherModeH(self.0 ^ rhs.0)
-    }
-}
-impl std::ops::BitXorAssign for OtherModeH {
-    fn bitxor_assign(&mut self, rhs: OtherModeH) {
-        self.0 ^= rhs.0;
-    }
-}
-impl std::ops::Not for OtherModeH {
-    type Output = OtherModeH;
-    fn not(self) -> OtherModeH {
-        OtherModeH(!self.0)
-    }
-}
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    derive_more::BitAnd,
+    derive_more::BitAndAssign,
+    derive_more::BitOr,
+    derive_more::BitOrAssign,
+    derive_more::BitXor,
+    derive_more::BitXorAssign,
+    derive_more::Not,
+)]
 pub struct OtherModeHMask(pub u32);
-impl std::fmt::Debug for OtherModeHMask {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+
+impl Debug for OtherModeHMask {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let mut sep = Separator::new(" | ");
         for name in [
             (OtherModeHMask::ALPHADITHER, "ALPHADITHER"),
@@ -1127,6 +1048,7 @@ impl std::fmt::Debug for OtherModeHMask {
         Ok(())
     }
 }
+
 impl OtherModeHMask {
     pub const ALPHADITHER: OtherModeHMask = OtherModeHMask(0x0000_0030);
     pub const RGBDITHER: OtherModeHMask = OtherModeHMask(0x0000_00c0);
@@ -1144,6 +1066,7 @@ impl OtherModeHMask {
     pub fn test(self, mask: OtherModeHMask) -> bool {
         (self.0 & mask.0) == mask.0
     }
+
     pub fn unknown(self) -> u32 {
         (self
             & !(OtherModeHMask::ALPHADITHER
@@ -1161,45 +1084,6 @@ impl OtherModeHMask {
             .0
     }
 }
-impl std::ops::BitAnd for OtherModeHMask {
-    type Output = OtherModeHMask;
-    fn bitand(self, rhs: OtherModeHMask) -> OtherModeHMask {
-        OtherModeHMask(self.0 & rhs.0)
-    }
-}
-impl std::ops::BitAndAssign for OtherModeHMask {
-    fn bitand_assign(&mut self, rhs: OtherModeHMask) {
-        self.0 &= rhs.0;
-    }
-}
-impl std::ops::BitOr for OtherModeHMask {
-    type Output = OtherModeHMask;
-    fn bitor(self, rhs: OtherModeHMask) -> OtherModeHMask {
-        OtherModeHMask(self.0 | rhs.0)
-    }
-}
-impl std::ops::BitOrAssign for OtherModeHMask {
-    fn bitor_assign(&mut self, rhs: OtherModeHMask) {
-        self.0 |= rhs.0;
-    }
-}
-impl std::ops::BitXor for OtherModeHMask {
-    type Output = OtherModeHMask;
-    fn bitxor(self, rhs: OtherModeHMask) -> OtherModeHMask {
-        OtherModeHMask(self.0 ^ rhs.0)
-    }
-}
-impl std::ops::BitXorAssign for OtherModeHMask {
-    fn bitxor_assign(&mut self, rhs: OtherModeHMask) {
-        self.0 ^= rhs.0;
-    }
-}
-impl std::ops::Not for OtherModeHMask {
-    type Output = OtherModeHMask;
-    fn not(self) -> OtherModeHMask {
-        OtherModeHMask(!self.0)
-    }
-}
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum TextureFormat {
@@ -1209,6 +1093,7 @@ pub enum TextureFormat {
     Ia,
     I,
 }
+
 impl TextureFormat {
     fn parse(value: u8) -> TextureFormat {
         match value {
@@ -1229,6 +1114,7 @@ pub enum TextureDepth {
     Bits16,
     Bits32,
 }
+
 impl TextureDepth {
     fn parse(value: u8) -> TextureDepth {
         match value {
@@ -1250,158 +1136,78 @@ impl TextureDepth {
     }
 }
 
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
-pub struct ColorCombine {
-    a: ColorInput,
-    b: ColorInput,
-    c: ColorInput,
-    d: ColorInput,
-}
-impl std::fmt::Debug for ColorCombine {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let fmt_each = |f: &mut std::fmt::Formatter, x| match x {
-            ColorInput::One => write!(f, "1"),
-            x => write!(f, "{:?}", x),
-        };
-        let fmt_a_minus_b = |f: &mut std::fmt::Formatter, a, b, parens| match (a, b, parens) {
-            (ColorInput::Zero, ColorInput::Zero, _) => write!(f, "0"),
-            (a, ColorInput::Zero, _) => fmt_each(f, a),
-            (ColorInput::Zero, b, _) => {
-                write!(f, "-")?;
-                fmt_each(f, b)
-            }
-            (a, b, false) => {
-                fmt_each(f, a)?;
-                write!(f, " - ")?;
-                fmt_each(f, b)
-            }
-            (a, b, true) => {
-                write!(f, "(")?;
-                fmt_each(f, a)?;
-                write!(f, " - ")?;
-                fmt_each(f, b)?;
-                write!(f, ")")
-            }
-        };
-        let fmt_opt_d = |f: &mut std::fmt::Formatter, d| match d {
-            ColorInput::Zero => Ok(()),
-            _ => {
-                write!(f, " + ")?;
-                fmt_each(f, self.d)
-            }
-        };
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, derive_more::BitAnd, derive_more::BitOr)]
+pub struct CombinerReference(pub u32);
 
-        write!(f, "[")?;
-        match self.c {
-            ColorInput::Zero => {
-                // Skip (A - B) * C entirely.
-                fmt_each(f, self.d)?;
-            }
-            ColorInput::One => {
-                // Omit C.
-                fmt_a_minus_b(f, self.a, self.b, /*parens:*/ false)?;
-                fmt_opt_d(f, self.d)?;
-            }
-            _ => {
-                fmt_a_minus_b(f, self.a, self.b, /*parens:*/ true)?;
-                write!(f, " * {:?}", self.c)?;
-                fmt_opt_d(f, self.d)?;
-            }
-        }
-        write!(f, "]")
+impl CombinerReference {
+    pub const COMBINED: CombinerReference = CombinerReference(0x0000_0001);
+    pub const TEXEL_0: CombinerReference = CombinerReference(0x0000_0002);
+    pub const TEXEL_1: CombinerReference = CombinerReference(0x0000_0004);
+    pub const PRIMITIVE: CombinerReference = CombinerReference(0x0000_0008);
+    pub const SHADE: CombinerReference = CombinerReference(0x0000_0010);
+    pub const ENVIRONMENT: CombinerReference = CombinerReference(0x0000_0020);
+    pub const NOISE: CombinerReference = CombinerReference(0x0000_0040);
+    pub const CENTER: CombinerReference = CombinerReference(0x0000_0080);
+    pub const K_4: CombinerReference = CombinerReference(0x0000_0100);
+    pub const SCALE: CombinerReference = CombinerReference(0x0000_0200);
+    pub const LOD_FRACTION: CombinerReference = CombinerReference(0x0000_0400);
+    pub const PRIM_LOD_FRAC: CombinerReference = CombinerReference(0x0000_0800);
+    pub const K_5: CombinerReference = CombinerReference(0x0000_1000);
+
+    pub fn test(self, mask: CombinerReference) -> bool {
+        (self & mask) == mask
     }
 }
+
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+pub struct ColorCombine {
+    pub a: ColorInput,
+    pub b: ColorInput,
+    pub c: ColorInput,
+    pub d: ColorInput,
+}
+
+impl Debug for ColorCombine {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(
+            f,
+            "[({:?} - {:?}) * {:?} + {:?}]",
+            self.a, self.b, self.c, self.d,
+        )
+    }
+}
+
 impl ColorCombine {
     pub fn new(a: ColorInput, b: ColorInput, c: ColorInput, d: ColorInput) -> ColorCombine {
         ColorCombine { a, b, c, d }
     }
-    pub fn a(self) -> ColorInput {
-        self.a
-    }
-    pub fn b(self) -> ColorInput {
-        self.b
-    }
-    pub fn c(self) -> ColorInput {
-        self.c
-    }
-    pub fn d(self) -> ColorInput {
-        self.d
+
+    pub fn references(self) -> CombinerReference {
+        self.a.references() | self.b.references() | self.c.references() | self.d.references()
     }
 }
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct AlphaCombine {
-    a: AlphaInput,
-    b: AlphaInput,
-    c: AlphaInput,
-    d: AlphaInput,
+    pub a: AlphaInput,
+    pub b: AlphaInput,
+    pub c: AlphaInput,
+    pub d: AlphaInput,
 }
-impl std::fmt::Debug for AlphaCombine {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let fmt_each = |f: &mut std::fmt::Formatter, x| match x {
-            AlphaInput::One => write!(f, "1"),
-            x => write!(f, "{:?}", x),
-        };
-        let fmt_a_minus_b = |f: &mut std::fmt::Formatter, a, b, parens| match (a, b, parens) {
-            (AlphaInput::Zero, AlphaInput::Zero, _) => write!(f, "0"),
-            (a, AlphaInput::Zero, _) => fmt_each(f, a),
-            (AlphaInput::Zero, b, _) => {
-                write!(f, "-")?;
-                fmt_each(f, b)
-            }
-            (a, b, false) => {
-                fmt_each(f, a)?;
-                write!(f, " - ")?;
-                fmt_each(f, b)
-            }
-            (a, b, true) => {
-                write!(f, "(")?;
-                fmt_each(f, a)?;
-                write!(f, " - ")?;
-                fmt_each(f, b)?;
-                write!(f, ")")
-            }
-        };
-        let fmt_opt_d = |f: &mut std::fmt::Formatter, d| match d {
-            AlphaInput::Zero => Ok(()),
-            _ => {
-                write!(f, " + ")?;
-                fmt_each(f, self.d)
-            }
-        };
 
-        write!(f, "[")?;
-        match self.c {
-            AlphaInput::Zero => {
-                // Skip (A - B) * C entirely.
-                fmt_each(f, self.d)?;
-            }
-            AlphaInput::One => {
-                // Omit C.
-                fmt_a_minus_b(f, self.a, self.b, /*parens:*/ false)?;
-                fmt_opt_d(f, self.d)?;
-            }
-            _ => {
-                fmt_a_minus_b(f, self.a, self.b, /*parens:*/ true)?;
-                write!(f, " * {:?}", self.c)?;
-                fmt_opt_d(f, self.d)?;
-            }
-        }
-        write!(f, "]")
+impl Debug for AlphaCombine {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(
+            f,
+            "[({:?} - {:?}) * {:?} + {:?}]",
+            self.a, self.b, self.c, self.d,
+        )
     }
 }
+
 impl AlphaCombine {
-    pub fn a(self) -> AlphaInput {
-        self.a
-    }
-    pub fn b(self) -> AlphaInput {
-        self.b
-    }
-    pub fn c(self) -> AlphaInput {
-        self.c
-    }
-    pub fn d(self) -> AlphaInput {
-        self.d
+    pub fn references(self) -> CombinerReference {
+        self.a.references() | self.b.references() | self.c.references() | self.d.references()
     }
 }
 
@@ -1429,6 +1235,7 @@ pub enum ColorInput {
     PrimLodFrac,
     K5,
 }
+
 impl ColorInput {
     fn parse_a(value: u8) -> ColorInput {
         match value {
@@ -1444,6 +1251,7 @@ impl ColorInput {
             _ => panic!("unexpected color combiner A value: 0x{:02x}", value),
         }
     }
+
     fn parse_b(value: u8) -> ColorInput {
         match value {
             0x00 => ColorInput::Combined,
@@ -1458,6 +1266,7 @@ impl ColorInput {
             _ => panic!("unexpected color combiner B value: 0x{:02x}", value),
         }
     }
+
     fn parse_c(value: u8) -> ColorInput {
         match value {
             0x00 => ColorInput::Combined,
@@ -1480,6 +1289,7 @@ impl ColorInput {
             _ => panic!("unexpected color combiner C value: 0x{:02x}", value),
         }
     }
+
     fn parse_d(value: u8) -> ColorInput {
         match value {
             0x00 => ColorInput::Combined,
@@ -1491,6 +1301,32 @@ impl ColorInput {
             0x06 => ColorInput::One,
             0x07 => ColorInput::Zero,
             _ => panic!("unexpected color combiner D value: 0x{:02x}", value),
+        }
+    }
+
+    pub fn references(self) -> CombinerReference {
+        match self {
+            ColorInput::Combined => CombinerReference::COMBINED,
+            ColorInput::Texel0 => CombinerReference::TEXEL_0,
+            ColorInput::Texel1 => CombinerReference::TEXEL_1,
+            ColorInput::Primitive => CombinerReference::PRIMITIVE,
+            ColorInput::Shade => CombinerReference::SHADE,
+            ColorInput::Environment => CombinerReference::ENVIRONMENT,
+            ColorInput::One => CombinerReference::default(),
+            ColorInput::Noise => CombinerReference::NOISE,
+            ColorInput::Zero => CombinerReference::default(),
+            ColorInput::Center => CombinerReference::CENTER,
+            ColorInput::K4 => CombinerReference::K_4,
+            ColorInput::Scale => CombinerReference::SCALE,
+            ColorInput::CombinedAlpha => CombinerReference::COMBINED,
+            ColorInput::Texel0Alpha => CombinerReference::TEXEL_0,
+            ColorInput::Texel1Alpha => CombinerReference::TEXEL_1,
+            ColorInput::PrimitiveAlpha => CombinerReference::PRIMITIVE,
+            ColorInput::ShadeAlpha => CombinerReference::SHADE,
+            ColorInput::EnvAlpha => CombinerReference::ENVIRONMENT,
+            ColorInput::LodFraction => CombinerReference::LOD_FRACTION,
+            ColorInput::PrimLodFrac => CombinerReference::PRIM_LOD_FRAC,
+            ColorInput::K5 => CombinerReference::K_5,
         }
     }
 }
@@ -1508,6 +1344,7 @@ pub enum AlphaInput {
     LodFraction,
     PrimLodFrac,
 }
+
 impl AlphaInput {
     fn parse_abd(value: u8) -> AlphaInput {
         match value {
@@ -1522,6 +1359,7 @@ impl AlphaInput {
             _ => panic!("unexpected alpha combiner A/B/D value: 0x{:02x}", value),
         }
     }
+
     fn parse_c(value: u8) -> AlphaInput {
         match value {
             0x00 => AlphaInput::LodFraction,
@@ -1535,18 +1373,35 @@ impl AlphaInput {
             _ => panic!("unexpected alpha combiner C value: 0x{:02x}", value),
         }
     }
+
+    pub fn references(self) -> CombinerReference {
+        match self {
+            AlphaInput::Combined => CombinerReference::COMBINED,
+            AlphaInput::Texel0 => CombinerReference::TEXEL_0,
+            AlphaInput::Texel1 => CombinerReference::TEXEL_1,
+            AlphaInput::Primitive => CombinerReference::PRIMITIVE,
+            AlphaInput::Shade => CombinerReference::SHADE,
+            AlphaInput::Environment => CombinerReference::ENVIRONMENT,
+            AlphaInput::One => CombinerReference::default(),
+            AlphaInput::Zero => CombinerReference::default(),
+            AlphaInput::LodFraction => CombinerReference::LOD_FRACTION,
+            AlphaInput::PrimLodFrac => CombinerReference::PRIM_LOD_FRAC,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
 pub struct UnlitVertex<'a> {
     data: &'a [u8],
 }
+
 impl<'a> StructReader<'a> for UnlitVertex<'a> {
     const SIZE: usize = 16;
     fn new(data: &'a [u8]) -> UnlitVertex<'a> {
         UnlitVertex { data }
     }
 }
+
 impl<'a> UnlitVertex<'a> {
     pub fn position(self) -> [i16; 3] {
         [
@@ -1555,12 +1410,14 @@ impl<'a> UnlitVertex<'a> {
             (&self.data[0x4..]).read_i16::<BigEndian>().unwrap(),
         ]
     }
+
     pub fn texcoord(self) -> [i16; 2] {
         [
             (&self.data[0x8..]).read_i16::<BigEndian>().unwrap(),
             (&self.data[0xa..]).read_i16::<BigEndian>().unwrap(),
         ]
     }
+
     pub fn color(self) -> [u8; 4] {
         [
             self.data[0xc],
@@ -1575,12 +1432,14 @@ impl<'a> UnlitVertex<'a> {
 pub struct LitVertex<'a> {
     data: &'a [u8],
 }
+
 impl<'a> StructReader<'a> for LitVertex<'a> {
     const SIZE: usize = 16;
     fn new(data: &'a [u8]) -> LitVertex<'a> {
         LitVertex { data }
     }
 }
+
 impl<'a> LitVertex<'a> {
     pub fn position(self) -> [i16; 3] {
         [
@@ -1589,12 +1448,14 @@ impl<'a> LitVertex<'a> {
             (&self.data[0x4..]).read_i16::<BigEndian>().unwrap(),
         ]
     }
+
     pub fn texcoord(self) -> [i16; 2] {
         [
             (&self.data[0x8..]).read_i16::<BigEndian>().unwrap(),
             (&self.data[0xa..]).read_i16::<BigEndian>().unwrap(),
         ]
     }
+
     pub fn normal(self) -> [i8; 3] {
         [
             self.data[0xc] as i8,
@@ -1602,6 +1463,7 @@ impl<'a> LitVertex<'a> {
             self.data[0xe] as i8,
         ]
     }
+
     pub fn alpha(self) -> u8 {
         self.data[0xf]
     }

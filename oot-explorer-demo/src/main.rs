@@ -54,7 +54,6 @@ fn main() {
         {
             let scene = entry.scene(scope, &mut fs);
             examine_scene(scope, &mut fs, &ctx, &mut dlist_interp, scene_index, scene);
-            dlist_interp.clear_batches();
         }
         println!("total_dlists: {}", dlist_interp.total_dlists());
         println!("total_instructions: {}", dlist_interp.total_instructions());
@@ -64,6 +63,7 @@ fn main() {
         println!("total_lit_verts: {}", dlist_interp.total_lit_verts());
         println!("total_unlit_verts: {}", dlist_interp.total_unlit_verts());
         println!("unique_textures: {:#?}", dlist_interp.unique_textures());
+        println!("total_batches: {:#?}", dlist_interp.iter_batches().count());
 
         for texture in dlist_interp.iter_textures() {
             sender.send(texture.clone()).unwrap();

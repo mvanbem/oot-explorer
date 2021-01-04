@@ -18,6 +18,9 @@ num-traits = "0.2"
 oot-explorer-core = { path = "../oot-explorer-core" }
 oot-explorer-gl = { path = "../oot-explorer-gl" }
 scoped-owner = { path = "../scoped-owner" }
+serde = { version = "1", features = ["derive"] }
+serde_bytes = "0.11"
+serde-wasm-bindgen = "0.1"
 slotmap = "0.4"
 wasm-bindgen = "0.2"
 

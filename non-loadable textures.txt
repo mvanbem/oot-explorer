@@ -1,0 +1,10 @@
+0x02081000..0x0209c380: Kokiri Forest, room 0
+WARNING: failed to decode texture VROM(0x0209bb80): too few texels for the given tile parameters: want 2048, but got 512
+WARNING: failed to decode texture VROM(0x0209bd80): too few texels for the given tile parameters: want 2048, but got 512
+WARNING: failed to decode texture VROM(0x0209bf80): too few texels for the given tile parameters: want 2048, but got 1024
+
+0x0212b000..0x0213c160: Gerudo Valley, scene
+WARNING: failed to decode texture VROM(0x02131d60): too few texels for the given tile parameters: want 2048, but got 1024
+
+0x021e3000..0x021f5a40: Haunted Wasteland, room 1
+WARNING: failed to decode texture VROM(0x021f4e40): too few texels for the given tile parameters: want 2048, but got 1024

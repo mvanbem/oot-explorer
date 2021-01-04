@@ -1,13 +1,13 @@
 use oot_explorer_core::fs::VromAddr;
 use oot_explorer_core::gbi::{
-    AlphaCombine, ColorCombine, GeometryMode, OtherModeH, OtherModeHMask, Qu0_16, Qu10_2, Qu1_11,
-    TextureDepth, TextureFormat,
+    AlphaCombine, ColorCombine, CombinerReference, GeometryMode, OtherModeH, OtherModeHMask,
+    Qu0_16, Qu10_2, Qu1_11, TextureDepth, TextureFormat,
 };
 use std::ops::Range;
 use thiserror::Error;
 
 use crate::shader_state::{
-    PaletteSource, ShaderState, TexCoordParams, TextureDescriptor, TextureUsage,
+    PaletteSource, ShaderState, TexCoordParams, TextureDescriptor, TextureParams, TextureState,
 };
 
 #[derive(Debug)]
@@ -16,7 +16,9 @@ pub struct RcpState {
     pub geometry_mode: GeometryMode,
     pub rdp_half_1: Option<u32>,
     pub rdp_other_mode: RdpOtherMode,
-    pub env: Option<[u8; 4]>,
+    pub primitive_color: Option<[u8; 4]>,
+    pub env_color: Option<[u8; 4]>,
+    pub prim_lod_frac: Option<u8>,
     pub combiner: Option<CombinerState>,
     pub texture_src: Option<TextureSource>,
     pub tiles: [Tile; 8],
@@ -26,7 +28,7 @@ pub struct RcpState {
 
 impl RcpState {
     pub fn to_shader_state(&self) -> ShaderState {
-        let (texture_a, texture_b) = self.get_texture_state();
+        let (texture_0, texture_1) = self.get_texture_state();
         ShaderState {
             two_cycle_mode: match self.rdp_other_mode.hi & OtherModeHMask::CYCLETYPE {
                 x if x == OtherModeH::CYC_1CYCLE => false,
@@ -36,14 +38,18 @@ impl RcpState {
                     self
                 ),
             },
-            env: self.env.unwrap_or([0, 0, 0, 0]),
+            primitive_color: self.primitive_color,
+            env_color: self.env_color,
+            prim_lod_frac: self.prim_lod_frac,
             combiner: self.combiner.as_ref().unwrap().clone(),
-            texture_a,
-            texture_b,
+            texture_0,
+            texture_1,
         }
     }
 
-    fn get_texture_state(&self) -> (Option<TextureUsage>, Option<TextureUsage>) {
+    fn get_texture_state(&self) -> (Option<TextureState>, Option<TextureState>) {
+        let references = self.combiner.as_ref().unwrap().references();
+
         if !self.rsp_texture_state.enable {
             return (None, None);
         }
@@ -54,12 +60,20 @@ impl RcpState {
             OtherModeH::TL_TILE,
         );
 
-        let tile_a = self.get_tile_state(self.rsp_texture_state.tile);
-        let tile_b = self.get_tile_state((self.rsp_texture_state.tile + 1) & 0x7);
-        (tile_a, tile_b)
+        let tile_0 = if references.test(CombinerReference::TEXEL_0) {
+            self.get_tile_state(self.rsp_texture_state.tile)
+        } else {
+            None
+        };
+        let tile_1 = if references.test(CombinerReference::TEXEL_1) {
+            self.get_tile_state((self.rsp_texture_state.tile + 1) & 0x7)
+        } else {
+            None
+        };
+        (tile_0, tile_1)
     }
 
-    fn get_tile_state(&self, tile: u8) -> Option<TextureUsage> {
+    fn get_tile_state(&self, tile: u8) -> Option<TextureState> {
         let tile = &self.tiles[tile as usize];
         let dimensions = tile.dimensions.as_ref()?;
         let attributes = tile.attributes.as_ref()?;
@@ -89,28 +103,50 @@ impl RcpState {
             }
             _ => PaletteSource::None,
         };
-        Some(TextureUsage {
+
+        let calc_size = |bounds: &Range<Qu10_2>, mask: u8| {
+            // Calculate the full range of tile coordinates that might be sampled, not considering
+            // masking. Shift right two places because the tile coordinates are in 10.2 fixed point.
+            // Add one because the tile coordinates are inclusive bounds.
+            let size = ((bounds.end.0 - bounds.start.0) >> 2) + 1;
+
+            if mask == 0 {
+                // No masking, so the full range might be sampled.
+                size
+            } else {
+                // Masking exposes only the N least significant bits of the integer tile coordinate.
+                size.min(1 << mask)
+            }
+        };
+        let width = calc_size(&dimensions.s, attributes.mask_s);
+        let height = calc_size(&dimensions.t, attributes.mask_t);
+
+        Some(TextureState {
             descriptor: TextureDescriptor {
                 source,
                 palette_source,
                 render_format: attributes.format,
                 render_depth: attributes.depth,
-                render_width: (((dimensions.s.end.0 - dimensions.s.start.0) >> 2) + 1) as usize,
-                render_height: (((dimensions.t.end.0 - dimensions.t.start.0) >> 2) + 1) as usize,
+                render_width: width as usize,
+                render_height: height as usize,
                 render_stride: attributes.stride as usize,
                 render_palette: attributes.palette,
             },
-            params_s: TexCoordParams {
-                mirror: attributes.mirror_s,
-                mask: attributes.mask_s,
-                shift: attributes.shift_s,
-                clamp: attributes.clamp_s,
-            },
-            params_t: TexCoordParams {
-                mirror: attributes.mirror_t,
-                mask: attributes.mask_t,
-                shift: attributes.shift_t,
-                clamp: attributes.clamp_t,
+            params: TextureParams {
+                s: TexCoordParams {
+                    range: dimensions.s.clone(),
+                    mirror: attributes.mirror_s,
+                    mask: attributes.mask_s,
+                    shift: attributes.shift_s,
+                    clamp: attributes.clamp_s,
+                },
+                t: TexCoordParams {
+                    range: dimensions.t.clone(),
+                    mirror: attributes.mirror_t,
+                    mask: attributes.mask_t,
+                    shift: attributes.shift_t,
+                    clamp: attributes.clamp_t,
+                },
             },
         })
     }
@@ -127,6 +163,15 @@ pub struct CombinerState {
     pub alpha_0: AlphaCombine,
     pub color_1: ColorCombine,
     pub alpha_1: AlphaCombine,
+}
+
+impl CombinerState {
+    pub fn references(&self) -> CombinerReference {
+        self.color_0.references()
+            | self.alpha_0.references()
+            | self.color_1.references()
+            | self.alpha_1.references()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -178,7 +223,7 @@ pub struct RspTextureState {
 ///
 /// This modeling is incomplete. Partially overwritten regions are discarded for simplicity on the
 /// assumption that nobody uses TMEM that way. If this assumption is wrong, attempts to render from
-/// affected tiles will warn about use of an uninitialized area in TMEM.
+/// affected tiles will warn about undefined contents.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Tmem {
     regions: Vec<TmemRegion>,

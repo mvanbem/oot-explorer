@@ -292,16 +292,14 @@ layout(location = 4) in vec4 vertexColor;
 uniform mat4 u_projectionMatrix;
 uniform mat4 u_modelViewMatrix;
 
-out vec4 v_color;
 out vec4 v_shade;
-out vec2 v_tex_coord;
+out vec2 v_texCoord;
 
 void main() {
   gl_Position = u_projectionMatrix * u_modelViewMatrix * vec4(vertexPosition, 1.0);
 
-  v_color = vertexColor;
   v_shade = vertexColor;
-  v_tex_coord = vertexTexCoord / 32.0;
+  v_texCoord = vertexTexCoord / 32.0;
 }
 `;
 
@@ -482,7 +480,9 @@ class MainView {
       if (!gl.getProgramParameter(programs[i], gl.LINK_STATUS)) {
         console.log('program info log:', gl.getProgramInfoLog(programs[i]));
         console.log('vertex shader info log:', gl.getShaderInfoLog(vertexShader));
+        console.log('vertex shader source:', gl.getShaderSource(vertexShader));
         console.log('fragment shader info log:', gl.getShaderInfoLog(fragmentShaders[i]));
+        console.log('fragment shader source:', gl.getShaderSource(fragmentShaders[i]));
         throw new Error('failed to link GL program');
       }
 
@@ -590,15 +590,15 @@ class MainView {
     for (let batch of this.batches || []) {
       gl.useProgram(batch.program);
       gl.enable(gl.DEPTH_TEST);
-      gl.depthMask(true);
-      gl.disable(gl.BLEND);
 
       if (batch.translucent) {
+        gl.depthMask(false);
         gl.disable(gl.CULL_FACE);
         // TODO: This is extremely fake. The RDP has blending parameters.
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
       } else {
+        gl.depthMask(true);
         gl.enable(gl.CULL_FACE);
         gl.disable(gl.BLEND);
       }
@@ -611,8 +611,8 @@ class MainView {
         gl.getUniformLocation(batch.program, 'u_modelViewMatrix'),
         false,
         modelViewMatrix);
-      gl.uniform1i(gl.getUniformLocation(batch.program, "u_texture_a"), 0);
-      gl.uniform1i(gl.getUniformLocation(batch.program, "u_texture_b"), 1);
+      gl.uniform1i(gl.getUniformLocation(batch.program, "u_texture0"), 0);
+      gl.uniform1i(gl.getUniformLocation(batch.program, "u_texture1"), 1);
 
       gl.bindBuffer(gl.ARRAY_BUFFER, batch.vertexBuffer);
       // Position
@@ -639,7 +639,7 @@ class MainView {
           gl.uniform2f(
             gl.getUniformLocation(
               batch.program,
-              i == 0 ? "u_texture_a_inv_size" : "u_texture_b_inv_size"),
+              'u_texture' + i + 'InvSize'),
             1 / texture.width,
             1 / texture.height);
           gl.bindSampler(i, texture.sampler);

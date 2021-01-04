@@ -51,6 +51,9 @@ pub enum DecodeError {
     #[error("texels were accessed from a TMEM region with undefined contents")]
     UndefinedTexels,
 
+    #[error("too few texels for the given tile parameters: want {want}, but got {got}")]
+    UnderflowedTexels { want: u32, got: u32 },
+
     #[error("inaccessible texels: {0:?}")]
     InaccessibleTexels(VirtualSliceError),
 
@@ -74,6 +77,7 @@ fn get_texture_source_and_load_information(
         Qu1_11,
         TextureFormat,
         TextureDepth,
+        u32,
     ),
     DecodeError,
 > {
@@ -83,6 +87,7 @@ fn get_texture_source_and_load_information(
             src_format,
             src_depth,
             load_dxt,
+            load_texels,
             load_format,
             load_depth,
             ..
@@ -93,6 +98,7 @@ fn get_texture_source_and_load_information(
             load_dxt,
             load_format,
             load_depth,
+            (8 * load_texels as u32) / src_depth.texels_per_tmem_word::<u32>(),
         )),
         TmemSource::LoadTlut { .. } => Err(DecodeError::UnexpectedTexelSource),
         TmemSource::Undefined => Err(DecodeError::UndefinedTexels),
@@ -104,17 +110,20 @@ pub fn get_texel_data<'a>(
     fs: &mut LazyFileSystem<'a>,
     texture: &TextureDescriptor,
     src_ptr: VromAddr,
+    load_len: u32,
 ) -> Result<(&'a [u8], usize), DecodeError> {
+    let expected_len = (8 * texture.render_width
+        / texture.render_depth.texels_per_tmem_word::<usize>()
+        + 8 * (texture.render_height - 1) * texture.render_stride) as u32;
+    if load_len < expected_len {
+        return Err(DecodeError::UnderflowedTexels {
+            want: expected_len,
+            got: load_len,
+        });
+    }
+
     let src = fs
-        .get_virtual_slice(
-            scope,
-            src_ptr
-                ..src_ptr
-                    + (8 * texture.render_width
-                        / texture.render_depth.texels_per_tmem_word::<usize>()
-                        + 8 * (texture.render_height - 1) * texture.render_stride)
-                        as u32,
-        )
+        .get_virtual_slice(scope, src_ptr..src_ptr + expected_len)
         .map_err(|e| DecodeError::InaccessibleTexels(e))?;
 
     let stride_bytes = 8 * texture.render_stride;
@@ -374,14 +383,14 @@ pub fn decode<'a>(
     fs: &mut LazyFileSystem<'a>,
     texture: &TextureDescriptor,
 ) -> Result<DecodedTexture, DecodeError> {
-    let (src_ptr, src_format, src_depth, load_dxt, load_format, load_depth) =
+    let (src_ptr, src_format, src_depth, load_dxt, load_format, load_depth, load_len) =
         get_texture_source_and_load_information(texture)?;
 
     // Format conversion during load is not implemented.
     assert_eq!(src_format, load_format);
     assert_eq!(src_depth, load_depth);
 
-    let (src, stride_bytes) = get_texel_data(scope, fs, texture, src_ptr)?;
+    let (src, stride_bytes) = get_texel_data(scope, fs, texture, src_ptr, load_len)?;
     let mut dst = Vec::with_capacity(4 * texture.render_width * texture.render_height);
     (match (texture.render_depth, texture.render_format) {
         (TextureDepth::Bits4, TextureFormat::Ci) => decode_ci4,

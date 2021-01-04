@@ -67,7 +67,9 @@ impl DisplayListInterpreter {
                 rdp_other_mode: RdpOtherMode {
                     hi: OtherModeH::CYC_2CYCLE | OtherModeH::TT_RGBA16,
                 },
-                env: None,
+                primitive_color: None,
+                env_color: None,
+                prim_lod_frac: None,
                 combiner: None,
                 texture_src: None,
                 tiles: Default::default(),
@@ -343,12 +345,20 @@ impl DisplayListInterpreter {
                     });
                 }
                 // 0xfa
-                Instruction::SetPrimColor { .. } => {
-                    // TODO: Track the primitive color
+                Instruction::SetPrimColor {
+                    min_lod: _,
+                    lod_fraction,
+                    r,
+                    g,
+                    b,
+                    a,
+                } => {
+                    state.prim_lod_frac = Some(lod_fraction);
+                    state.primitive_color = Some([r, g, b, a]);
                 }
                 // 0xfb
                 Instruction::SetEnvColor { r, g, b, a } => {
-                    state.env = Some([r, g, b, a]);
+                    state.env_color = Some([r, g, b, a]);
                 }
                 // 0xfc
                 Instruction::SetCombine {
@@ -486,9 +496,9 @@ impl DisplayListInterpreter {
 
         // Track unique textures used.
         for texture in shader_state
-            .texture_a
+            .texture_0
             .iter()
-            .chain(shader_state.texture_b.iter())
+            .chain(shader_state.texture_1.iter())
         {
             match texture.descriptor.source {
                 TmemSource::Undefined => (),

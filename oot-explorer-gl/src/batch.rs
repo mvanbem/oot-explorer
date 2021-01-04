@@ -1,19 +1,19 @@
-use crate::shader_state::{ShaderState, TextureUsage};
+use crate::shader_state::{ShaderState, TextureState};
 
 #[derive(Clone)]
 pub struct Batch {
     pub fragment_shader: String,
     pub vertex_data: Vec<u8>,
     pub translucent: bool,
-    pub textures: Vec<TextureUsage>,
+    pub textures: Vec<TextureState>,
 }
 
 impl Batch {
     pub fn for_shader_state(shader_state: &ShaderState, translucent: bool) -> Batch {
         let mut textures = vec![];
-        if let Some(texture) = shader_state.texture_a.as_ref() {
+        if let Some(texture) = shader_state.texture_0.as_ref() {
             textures.push(texture.clone());
-            if let Some(texture) = shader_state.texture_b.as_ref() {
+            if let Some(texture) = shader_state.texture_1.as_ref() {
                 textures.push(texture.clone());
             }
         }

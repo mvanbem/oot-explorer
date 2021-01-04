@@ -14,23 +14,11 @@ pub fn opaque_key(params: &TextureParams) -> u32 {
 
 fn create_gl_sampler(gl: &WebGl2RenderingContext, params: &TextureParams) -> WebGlSampler {
     let sampler = gl.create_sampler().unwrap();
-    gl.sampler_parameteri(&sampler, Gl::TEXTURE_MAG_FILTER, Gl::LINEAR as i32);
-    gl.sampler_parameteri(
-        &sampler,
-        Gl::TEXTURE_MIN_FILTER,
-        Gl::LINEAR_MIPMAP_LINEAR as i32,
-    );
+    gl.sampler_parameteri(&sampler, Gl::TEXTURE_MAG_FILTER, Gl::NEAREST as i32);
+    gl.sampler_parameteri(&sampler, Gl::TEXTURE_MIN_FILTER, Gl::NEAREST as i32);
 
-    if params.s.mirror {
-        gl.sampler_parameteri(&sampler, Gl::TEXTURE_WRAP_S, Gl::MIRRORED_REPEAT as i32);
-    } else {
-        gl.sampler_parameteri(&sampler, Gl::TEXTURE_WRAP_S, Gl::REPEAT as i32);
-    }
-    if params.t.mirror {
-        gl.sampler_parameteri(&sampler, Gl::TEXTURE_WRAP_T, Gl::MIRRORED_REPEAT as i32);
-    } else {
-        gl.sampler_parameteri(&sampler, Gl::TEXTURE_WRAP_T, Gl::REPEAT as i32);
-    }
+    gl.sampler_parameteri(&sampler, Gl::TEXTURE_WRAP_S, Gl::CLAMP_TO_EDGE as i32);
+    gl.sampler_parameteri(&sampler, Gl::TEXTURE_WRAP_T, Gl::CLAMP_TO_EDGE as i32);
 
     sampler
 }

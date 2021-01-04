@@ -60,6 +60,13 @@ impl RcpState {
             OtherModeH::TL_TILE,
         );
 
+        match self.rdp_other_mode.hi & OtherModeHMask::TEXTDETAIL {
+            OtherModeH::TD_CLAMP => (),
+            OtherModeH::TD_SHARPEN => unimplemented!("texture sharpening"),
+            OtherModeH::TD_DETAIL => unimplemented!("detail texture"),
+            _ => unreachable!(),
+        }
+
         let tile_0 = if references.test(CombinerReference::TEXEL_0) {
             self.get_tile_state(self.rsp_texture_state.tile)
         } else {

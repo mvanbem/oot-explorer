@@ -283,11 +283,11 @@ const VERTEX_SHADER_SOURCE = `#version 300 es
 precision highp float;
 precision highp int;
 
-layout(location = 0) in vec3 vertexPosition;
-layout(location = 1) in vec3 vertexNormal;
+layout(location = 0) in ivec3 vertexPosition;
+layout(location = 1) in ivec3 vertexNormal;
 layout(location = 2) in uint vertexFlags;
-layout(location = 3) in vec2 vertexTexCoord;
-layout(location = 4) in vec4 vertexColor;
+layout(location = 3) in ivec2 vertexTexCoord;
+layout(location = 4) in uvec4 vertexColor;
 
 uniform mat4 u_projectionMatrix;
 uniform mat4 u_modelViewMatrix;
@@ -298,8 +298,13 @@ out vec2 v_texCoord;
 void main() {
   gl_Position = u_projectionMatrix * u_modelViewMatrix * vec4(vertexPosition, 1.0);
 
-  v_shade = vertexColor;
-  v_texCoord = vertexTexCoord / 32.0;
+  if ((vertexFlags & 1u) == 1u) {
+    // TODO: Lighting
+    v_shade = vec4(1.0);
+  } else {
+    v_shade = vec4(vertexColor) / 255.0;
+  }
+  v_texCoord = vec2(vertexTexCoord);
 }
 `;
 
@@ -316,6 +321,10 @@ function glInitShader(gl, type, source) {
     console.log('shader source:\n' + source);
     throw e;
   }
+}
+
+function addLineNumbers(text) {
+  return text.split('\n').map((line, i) => (i + 1) + ' | ' + line).join('\n');
 }
 
 class MainView {
@@ -480,9 +489,8 @@ class MainView {
       if (!gl.getProgramParameter(programs[i], gl.LINK_STATUS)) {
         console.log('program info log:', gl.getProgramInfoLog(programs[i]));
         console.log('vertex shader info log:', gl.getShaderInfoLog(vertexShader));
-        console.log('vertex shader source:', gl.getShaderSource(vertexShader));
         console.log('fragment shader info log:', gl.getShaderInfoLog(fragmentShaders[i]));
-        console.log('fragment shader source:', gl.getShaderSource(fragmentShaders[i]));
+        console.log('fragment shader source:\n' + addLineNumbers(gl.getShaderSource(fragmentShaders[i])));
         throw new Error('failed to link GL program');
       }
 
@@ -501,14 +509,7 @@ class MainView {
 
     let t2 = performance.now();
 
-    Status.show('Rendering first frame... (this is slow on Chrome on Windows)');
-    await this.nextStep();
-
-    let t3 = performance.now();
-
-    Status.show('Ready. ('
-      + 'processing: ' + Math.round(t2 - t1) + ' ms, '
-      + 'first frame: ' + Math.round(t3 - t2) + ' ms)');
+    Status.show('Ready. (' + Math.round(t2 - t1) + ' ms)');
   }
 
   updateDimensions() {
@@ -616,19 +617,19 @@ class MainView {
 
       gl.bindBuffer(gl.ARRAY_BUFFER, batch.vertexBuffer);
       // Position
-      gl.vertexAttribPointer(0, 3, gl.SHORT, false, 20, 0);
+      gl.vertexAttribIPointer(0, 3, gl.SHORT, 20, 0);
       gl.enableVertexAttribArray(0);
       // Normal
-      gl.vertexAttribPointer(1, 3, gl.BYTE, true, 20, 8);
+      gl.vertexAttribIPointer(1, 3, gl.BYTE, 20, 8);
       gl.enableVertexAttribArray(1);
       // Flags
       gl.vertexAttribIPointer(2, 1, gl.UNSIGNED_BYTE, 20, 11);
       gl.enableVertexAttribArray(2);
       // Texture coordinates
-      gl.vertexAttribPointer(3, 2, gl.SHORT, false, 20, 12);
+      gl.vertexAttribIPointer(3, 2, gl.SHORT, 20, 12);
       gl.enableVertexAttribArray(3);
       // Color
-      gl.vertexAttribPointer(4, 4, gl.UNSIGNED_BYTE, true, 20, 16);
+      gl.vertexAttribIPointer(4, 4, gl.UNSIGNED_BYTE, 20, 16);
       gl.enableVertexAttribArray(4);
 
       for (let i = 0; i < 2; ++i) {
@@ -636,12 +637,6 @@ class MainView {
         let texture = batch.textures[0];
         if (texture && texture.texture) {
           gl.bindTexture(gl.TEXTURE_2D, texture.texture);
-          gl.uniform2f(
-            gl.getUniformLocation(
-              batch.program,
-              'u_texture' + i + 'InvSize'),
-            1 / texture.width,
-            1 / texture.height);
           gl.bindSampler(i, texture.sampler);
         } else {
           gl.bindTexture(gl.TEXTURE_2D, null);

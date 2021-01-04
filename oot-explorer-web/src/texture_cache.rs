@@ -14,23 +14,13 @@ pub fn opaque_key(descriptor: &TextureDescriptor) -> u32 {
     ((hash >> 32) ^ hash) as u32
 }
 
-fn calc_levels(mut width: usize, mut height: usize) -> i32 {
-    let mut result = 1;
-    while width > 1 || height > 1 {
-        result += 1;
-        width = (width / 2).max(1);
-        height = (height / 2).max(1);
-    }
-    result
-}
-
 fn create_gl_texture(gl: &WebGl2RenderingContext, decoded: DecodedTexture) -> WebGlTexture {
     let texture = gl.create_texture().unwrap();
     gl.bind_texture(Gl::TEXTURE_2D, Some(&texture));
 
     gl.tex_storage_2d(
         Gl::TEXTURE_2D,
-        calc_levels(decoded.width, decoded.height),
+        1,
         Gl::RGBA8,
         decoded.width as i32,
         decoded.height as i32,
@@ -47,7 +37,6 @@ fn create_gl_texture(gl: &WebGl2RenderingContext, decoded: DecodedTexture) -> We
         Some(&decoded.data),
     )
     .unwrap();
-    gl.generate_mipmap(Gl::TEXTURE_2D);
 
     texture
 }

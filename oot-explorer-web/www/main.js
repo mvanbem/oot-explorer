@@ -327,6 +327,24 @@ function addLineNumbers(text) {
   return text.split('\n').map((line, i) => (i + 1) + ' | ' + line).join('\n');
 }
 
+function parseUrlFragment() {
+  let matches = /^#scene=([0-9]+)$/.exec(window.location.hash);
+  if (matches === null) {
+    return {
+      sceneIndex: 0,
+    };
+  }
+  return {
+    sceneIndex: parseInt(matches[1], 10) - 1,
+  };
+}
+
+function updateUrlFragment({ sceneIndex }) {
+  let url = new URL(window.location.toString());
+  url.hash = '#scene=' + (sceneIndex + 1);
+  window.location.replace(url);
+}
+
 class MainView {
   constructor({ rom }) {
     this.canvas = $t('canvas');
@@ -409,6 +427,15 @@ class MainView {
         this.keys.set(key, false);
       }
     });
+    window.addEventListener('hashchange', e => {
+      let { sceneIndex } = parseUrlFragment();
+      if (sceneIndex !== this.sceneIndex) {
+        this.changeScene(sceneIndex);
+      } else {
+        // Canonicalize it.
+        updateUrlFragment({ sceneIndex });
+      }
+    });
 
     this.view = {
       pos: vec3.clone([-4, 50, 603]),
@@ -422,7 +449,7 @@ class MainView {
     this.currentResolves = [];
     this.nextResolves = [];
 
-    this.changeScene(0);
+    this.changeScene(parseUrlFragment().sceneIndex);
 
     window.requestAnimationFrame(timestamp => this.step(timestamp));
   }
@@ -434,6 +461,7 @@ class MainView {
   async changeScene(sceneIndex) {
     let gl = this.gl;
     this.sceneIndex = sceneIndex;
+    updateUrlFragment({ sceneIndex });
 
     Status.show('Processing scene...');
     await this.nextStep();
@@ -503,6 +531,7 @@ class MainView {
         mode: gl.TRIANGLES,
         count: batch.vertexData.byteLength / 20,
         textures: textures[i],
+        zUpd: batch.zUpd,
       });
     }
     this.batches = [].concat(opaqueBatches, translucentBatches);
@@ -593,7 +622,6 @@ class MainView {
       gl.enable(gl.DEPTH_TEST);
 
       if (batch.translucent) {
-        gl.depthMask(false);
         gl.disable(gl.CULL_FACE);
         // TODO: This is extremely fake. The RDP has blending parameters.
         gl.enable(gl.BLEND);
@@ -603,6 +631,7 @@ class MainView {
         gl.enable(gl.CULL_FACE);
         gl.disable(gl.BLEND);
       }
+      gl.depthMask(batch.zUpd);
 
       gl.uniformMatrix4fv(
         gl.getUniformLocation(batch.program, 'u_projectionMatrix'),
@@ -634,7 +663,7 @@ class MainView {
 
       for (let i = 0; i < 2; ++i) {
         gl.activeTexture(gl.TEXTURE0 + i);
-        let texture = batch.textures[0];
+        let texture = batch.textures[i];
         if (texture && texture.texture) {
           gl.bindTexture(gl.TEXTURE_2D, texture.texture);
           gl.bindSampler(i, texture.sampler);

@@ -1,7 +1,7 @@
 use oot_explorer_core::fs::VromAddr;
 use oot_explorer_core::gbi::{
     AlphaCombine, ColorCombine, CombinerReference, GeometryMode, OtherModeH, OtherModeHMask,
-    Qu0_16, Qu10_2, Qu1_11, TextureDepth, TextureFormat,
+    OtherModeL, Qu0_16, Qu10_2, Qu1_11, TextureDepth, TextureFormat,
 };
 use std::ops::Range;
 use thiserror::Error;
@@ -28,7 +28,27 @@ pub struct RcpState {
 
 impl RcpState {
     pub fn to_shader_state(&self) -> ShaderState {
+        // eprintln!(
+        //     "Z mode: {}",
+        //     match self.rdp_other_mode.lo & OtherModeLMask::ZMODE {
+        //         OtherModeL::ZMODE_OPA => "opaque",
+        //         OtherModeL::ZMODE_INTER => "interpenetrating",
+        //         OtherModeL::ZMODE_XLU => "translucent",
+        //         OtherModeL::ZMODE_DEC => "decal",
+        //         _ => unreachable!(),
+        //     }
+        // );
+
         let (texture_0, texture_1) = self.get_texture_state();
+        for texture in [texture_0.as_ref(), texture_1.as_ref()]
+            .iter()
+            .flatten()
+            .copied()
+        {
+            if let Some(VromAddr(0x02445b70)) = texture.descriptor.source.src() {
+                eprintln!("RCP state:\n{:#?}", self);
+            }
+        }
         ShaderState {
             two_cycle_mode: match self.rdp_other_mode.hi & OtherModeHMask::CYCLETYPE {
                 x if x == OtherModeH::CYC_1CYCLE => false,
@@ -44,6 +64,7 @@ impl RcpState {
             combiner: self.combiner.as_ref().unwrap().clone(),
             texture_0,
             texture_1,
+            z_upd: self.rdp_other_mode.lo.test(OtherModeL::Z_UPD),
         }
     }
 
@@ -55,6 +76,7 @@ impl RcpState {
         }
 
         // LOD is not implemented.
+        assert_eq!(self.rsp_texture_state.max_lod, 0);
         assert_eq!(
             self.rdp_other_mode.hi & OtherModeHMask::TEXTLOD,
             OtherModeH::TL_TILE,
@@ -161,6 +183,7 @@ impl RcpState {
 
 #[derive(Clone, Copy, Debug)]
 pub struct RdpOtherMode {
+    pub lo: OtherModeL,
     pub hi: OtherModeH,
 }
 
@@ -207,14 +230,14 @@ pub struct TileAttributes {
     pub stride: u16,
     pub addr: u16,
     pub palette: u8,
-    pub clamp_t: bool,
-    pub mirror_t: bool,
-    pub mask_t: u8,
-    pub shift_t: u8,
     pub clamp_s: bool,
     pub mirror_s: bool,
     pub mask_s: u8,
     pub shift_s: u8,
+    pub clamp_t: bool,
+    pub mirror_t: bool,
+    pub mask_t: u8,
+    pub shift_t: u8,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

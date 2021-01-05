@@ -17,6 +17,7 @@ pub struct ShaderState {
     pub combiner: CombinerState,
     pub texture_0: Option<TextureState>,
     pub texture_1: Option<TextureState>,
+    pub z_upd: bool,
 }
 
 impl ShaderState {
@@ -98,7 +99,7 @@ precision highp int;
         .unwrap();
 
         if references.test(CombinerReference::PRIMITIVE) {
-            let prim = self.primitive_color.unwrap_or([0; 4]);
+            let prim = self.primitive_color.expect("undefined primitive color");
             write!(
                 glsl,
                 "vec4 prim = vec4({}.0, {}.0, {}.0, {}.0) / 255.0;\n",
@@ -107,7 +108,8 @@ precision highp int;
             .unwrap();
         }
         if references.test(CombinerReference::ENVIRONMENT) {
-            let env = self.env_color.unwrap_or([0; 4]);
+            // TODO: Determine an appropriate default environment color.
+            let env = self.env_color.unwrap_or([128; 4]);
             write!(
                 glsl,
                 "vec4 env = vec4({}.0, {}.0, {}.0, {}.0) / 255.0;\n",
@@ -119,13 +121,13 @@ precision highp int;
             unimplemented!("LOD is not implemented");
         }
         if references.test(CombinerReference::PRIM_LOD_FRAC) {
-            let prim_lod_frac = self.prim_lod_frac.unwrap_or(0);
+            let prim_lod_frac = self.prim_lod_frac.expect("undefined prim_lod_frac");
             write!(glsl, "float primLodFrac = {}.0 / 255.0;\n", prim_lod_frac,).unwrap();
         }
 
         // Texturing.
         if (references.test(CombinerReference::TEXEL_0) && self.texture_0.is_some())
-            || (references.test(CombinerReference::TEXEL_1) && self.texture_0.is_some())
+            || (references.test(CombinerReference::TEXEL_1) && self.texture_1.is_some())
         {
             write!(glsl, "ivec2 texCoord = ivec2(round(v_texCoord));\n").unwrap();
         }
@@ -149,6 +151,9 @@ precision highp int;
         write!(
             glsl,
             r#"fragColor = vec4({:?}, {:?});
+if (fragColor.a == 0.0) {{
+  discard;
+}}
 }}
 "#,
             color_ctx.get_with_ctx(color_1).unwrap(),
@@ -165,8 +170,39 @@ precision highp int;
 
         write!(
             glsl,
-            "ProcessedTexCoord processTexCoord{index}(ivec2 texCoord) {{\n",
+            "ProcessedTexCoord processTexCoord{index}(ivec2 texCoord, ivec2 offset) {{\n",
             index = index,
+        )
+        .unwrap();
+
+        // Apply shift.
+        //
+        // TODO: Left shifts might need to be masked to some particular width. Not sure what's
+        // supposed to happen in that case.
+        let shift_expr = |params: &TexCoordParams| match params.shift & 0xf {
+            0 => "",
+            1 => " >> 1",
+            2 => " >> 2",
+            3 => " >> 3",
+            4 => " >> 4",
+            5 => " >> 5",
+            6 => " >> 6",
+            7 => " >> 7",
+            8 => " >> 8",
+            9 => " >> 9",
+            10 => " >> 10",
+            11 => " << 5",
+            12 => " << 4",
+            13 => " << 3",
+            14 => " << 2",
+            15 => " << 1",
+            _ => unreachable!(),
+        };
+        write!(
+            glsl,
+            "ivec2 shifted = ivec2(texCoord.s{shift_s}, texCoord.t{shift_t}) + offset;\n",
+            shift_s = shift_expr(&texture.params.s),
+            shift_t = shift_expr(&texture.params.t),
         )
         .unwrap();
 
@@ -174,7 +210,7 @@ precision highp int;
         // min-corner of tile space.
         write!(
             glsl,
-            "ivec2 aligned = texCoord - ivec2({min_s}, {min_t});\n",
+            "ivec2 aligned = shifted - ivec2({min_s}, {min_t});\n",
             // Shift left to convert from Qu10_2 to Qi26_5.
             min_s = texture.params.s.range.start.0 << 3,
             min_t = texture.params.t.range.start.0 << 3,
@@ -266,12 +302,12 @@ return ProcessedTexCoord(texelCoord, texelFract);
             write!(
                 glsl,
                 r#"
-ProcessedTexCoord coord{index} = processTexCoord{index}(texCoord + ivec2(0, 0));
+ProcessedTexCoord coord{index} = processTexCoord{index}(texCoord, ivec2(0, 0));
 vec2 fract{index} = coord{index}.fract;
 ivec2 coordTL{index} = coord{index}.texel;
-ivec2 coordTR{index} = processTexCoord{index}(texCoord + ivec2(32, 0)).texel;
-ivec2 coordBL{index} = processTexCoord{index}(texCoord + ivec2(0, 32)).texel;
-ivec2 coordBR{index} = processTexCoord{index}(texCoord + ivec2(32, 32)).texel;
+ivec2 coordTR{index} = processTexCoord{index}(texCoord, ivec2(32, 0)).texel;
+ivec2 coordBL{index} = processTexCoord{index}(texCoord, ivec2(0, 32)).texel;
+ivec2 coordBR{index} = processTexCoord{index}(texCoord, ivec2(32, 32)).texel;
 vec4 sampleTL{index} = texelFetch(u_texture{index}, coordTL{index}, 0);
 vec4 sampleTR{index} = texelFetch(u_texture{index}, coordTR{index}, 0);
 vec4 sampleBL{index} = texelFetch(u_texture{index}, coordBL{index}, 0);
@@ -292,7 +328,7 @@ texel{index} = sampleBR{index} + (1.0 - fract{index}.s) * ds + (1.0 - fract{inde
         } else {
             write!(
                 glsl,
-                "vec4 texel{index} = vec4(1.0, 0.0, 1.0, 1.0);\n",
+                "vec4 texel{index} = vec4(1.0, 0.0, 1.0, 0.5);\n",
                 index = index
             )
             .unwrap();

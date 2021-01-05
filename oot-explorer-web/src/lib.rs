@@ -39,6 +39,7 @@ struct ProcessSceneBatch<'a> {
     vertex_data: &'a [u8],
     translucent: bool,
     textures: Vec<ProcessSceneTexture>,
+    z_upd: bool,
 }
 
 #[derive(Serialize)]
@@ -109,6 +110,7 @@ impl Context {
                     vertex_data: &batch.vertex_data,
                     translucent: batch.translucent,
                     textures,
+                    z_upd: batch.z_upd,
                 });
             }
 

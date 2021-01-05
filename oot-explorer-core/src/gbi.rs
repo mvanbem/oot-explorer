@@ -718,10 +718,16 @@ impl OtherModeL {
     }
 }
 
-impl std::ops::BitAnd<OtherModeLMask> for OtherModeL {
+impl BitAnd<OtherModeLMask> for OtherModeL {
     type Output = OtherModeL;
     fn bitand(self, rhs: OtherModeLMask) -> OtherModeL {
         OtherModeL(self.0 & rhs.0)
+    }
+}
+
+impl BitAndAssign<OtherModeLMask> for OtherModeL {
+    fn bitand_assign(&mut self, rhs: OtherModeLMask) {
+        self.0 &= rhs.0;
     }
 }
 

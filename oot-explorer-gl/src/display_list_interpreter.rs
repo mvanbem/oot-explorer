@@ -1,6 +1,7 @@
 use byteorder::{NativeEndian, WriteBytesExt};
 use oot_explorer_core::gbi::{
-    DisplayList, GeometryMode, Instruction, LitVertex, OtherModeH, Qu0_16, Qu10_2, UnlitVertex,
+    DisplayList, GeometryMode, Instruction, LitVertex, OtherModeH, OtherModeL, Qu0_16, Qu10_2,
+    UnlitVertex,
 };
 use oot_explorer_core::segment::{SegmentAddr, SegmentCtx};
 use oot_explorer_core::slice::Slice;
@@ -65,6 +66,7 @@ impl DisplayListInterpreter {
                 geometry_mode: GeometryMode::default(),
                 rdp_half_1: None,
                 rdp_other_mode: RdpOtherMode {
+                    lo: OtherModeL(0),
                     hi: OtherModeH::CYC_2CYCLE | OtherModeH::TT_RGBA16,
                 },
                 primitive_color: None,
@@ -227,8 +229,12 @@ impl DisplayListInterpreter {
                 // 0xe1
                 Instruction::RdpHalf1 { word } => state.rdp_half_1 = Some(word),
                 // 0xe2
-                Instruction::SetOtherModeL { .. } => {
-                    // TODO: track any relevant bits in the low other mode word
+                Instruction::SetOtherModeL {
+                    clear_bits,
+                    set_bits,
+                } => {
+                    state.rdp_other_mode.lo &= !clear_bits;
+                    state.rdp_other_mode.lo |= set_bits;
                 }
                 // 0xe3
                 Instruction::SetOtherModeH {
@@ -334,14 +340,14 @@ impl DisplayListInterpreter {
                         stride,
                         addr,
                         palette,
-                        clamp_t,
-                        mirror_t,
-                        mask_t,
-                        shift_t,
                         clamp_s,
                         mirror_s,
                         mask_s,
                         shift_s,
+                        clamp_t,
+                        mirror_t,
+                        mask_t,
+                        shift_t,
                     });
                 }
                 // 0xfa

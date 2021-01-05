@@ -6,6 +6,7 @@ pub struct Batch {
     pub vertex_data: Vec<u8>,
     pub translucent: bool,
     pub textures: Vec<TextureState>,
+    pub z_upd: bool,
 }
 
 impl Batch {
@@ -23,6 +24,7 @@ impl Batch {
             vertex_data: vec![],
             translucent,
             textures,
+            z_upd: shader_state.z_upd,
         }
     }
 }

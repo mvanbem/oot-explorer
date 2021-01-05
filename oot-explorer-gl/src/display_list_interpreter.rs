@@ -1,7 +1,7 @@
 use byteorder::{NativeEndian, WriteBytesExt};
 use oot_explorer_core::gbi::{
-    DisplayList, GeometryMode, Instruction, LitVertex, OtherModeH, OtherModeL, Qu0_16, Qu10_2,
-    UnlitVertex,
+    DisplayList, GeometryMode, Instruction, LitVertex, MtxFlags, OtherModeH, OtherModeL, Qu0_16,
+    Qu10_2, UnlitVertex,
 };
 use oot_explorer_core::segment::{SegmentAddr, SegmentCtx};
 use oot_explorer_core::slice::Slice;
@@ -11,8 +11,8 @@ use std::io::Write;
 
 use crate::batch::Batch;
 use crate::rcp::{
-    CombinerState, RcpState, RdpOtherMode, RspTextureState, TextureSource, TileAttributes,
-    TileDimensions, Tmem, TmemRegion, TmemSource,
+    CombinerState, Matrix, Point, RcpState, RdpOtherMode, RspTextureState, TextureSource,
+    TileAttributes, TileDimensions, Tmem, TmemRegion, TmemSource,
 };
 use crate::shader_state::{ShaderState, TextureDescriptor};
 use crate::{FLAGS_LIT, FLAGS_UNLIT};
@@ -22,6 +22,7 @@ pub struct DisplayListInterpreter {
     total_dlists: usize,
     total_instructions: usize,
     unmapped_calls: BTreeMap<SegmentAddr, usize>,
+    unmapped_matrices: BTreeMap<SegmentAddr, usize>,
     unmapped_textures: BTreeMap<SegmentAddr, usize>,
     max_depth: usize,
     total_lit_verts: usize,
@@ -37,6 +38,7 @@ impl DisplayListInterpreter {
             total_dlists: 0,
             total_instructions: 0,
             unmapped_calls: BTreeMap::new(),
+            unmapped_matrices: BTreeMap::new(),
             unmapped_textures: BTreeMap::new(),
             max_depth: 0,
             total_lit_verts: 0,
@@ -62,6 +64,7 @@ impl DisplayListInterpreter {
             dlist,
             translucent,
             &mut RcpState {
+                matrix_stack: vec![Matrix::identity()],
                 vertex_slots: [None; 32],
                 geometry_mode: GeometryMode::default(),
                 rdp_half_1: None,
@@ -108,10 +111,7 @@ impl DisplayListInterpreter {
                 }
                 // 0x01
                 Instruction::Vtx { count, index, ptr } => {
-                    // TODO: Use more RCP state. Matrix stack!
-
-                    // TODO: Dedupe vertices (at least by address, but
-                    // maybe by value?).
+                    // TODO: Dedupe vertices (at least by address, but maybe by value?).
 
                     let mut index = index as usize;
                     if state.geometry_mode.test(GeometryMode::LIGHTING) {
@@ -125,6 +125,7 @@ impl DisplayListInterpreter {
                             state.vertex_slots[index] =
                                 Some(DisplayListInterpreter::transform_and_encode_lit_vertex(
                                     &vertex,
+                                    state.matrix_stack.last().as_ref().unwrap(),
                                     state.rsp_texture_state.scale_s,
                                     state.rsp_texture_state.scale_t,
                                 ));
@@ -141,6 +142,7 @@ impl DisplayListInterpreter {
                             state.vertex_slots[index] =
                                 Some(DisplayListInterpreter::transform_and_encode_unlit_vertex(
                                     &vertex,
+                                    state.matrix_stack.last().as_ref().unwrap(),
                                     state.rsp_texture_state.scale_s,
                                     state.rsp_texture_state.scale_t,
                                 ));
@@ -160,7 +162,7 @@ impl DisplayListInterpreter {
                             ctx,
                             DisplayList::new(data),
                             translucent,
-                            state,
+                            &mut state.clone(),
                             depth + 1,
                         );
                     } else {
@@ -201,24 +203,41 @@ impl DisplayListInterpreter {
                     state.geometry_mode |= set_bits;
                 }
                 // 0xda
-                Instruction::Mtx { .. } => {
-                    // TODO: track matrix stack state
+                Instruction::Mtx { flags, ptr } => {
+                    // The projection matrix is not modeled here.
+                    if flags & MtxFlags::PROJECTION == MtxFlags::MODELVIEW {
+                        if let Ok(mut data) = ctx.resolve(ptr) {
+                            let rhs = Matrix::from_rsp_format(&mut data).unwrap();
+                            let new_matrix = match flags & MtxFlags::LOAD {
+                                MtxFlags::MUL => &rhs * state.matrix_stack.last().unwrap(),
+                                MtxFlags::LOAD => rhs,
+                                _ => unreachable!(),
+                            };
+                            match flags & MtxFlags::PUSH {
+                                MtxFlags::NOPUSH => {
+                                    *state.matrix_stack.last_mut().unwrap() = new_matrix
+                                }
+                                MtxFlags::PUSH => state.matrix_stack.push(new_matrix),
+                                _ => unreachable!(),
+                            };
+                        } else {
+                            *self.unmapped_matrices.entry(ptr).or_default() += 1;
+                        }
+                    }
                 }
                 // 0xde
-                Instruction::Dl { jump, ptr } => {
+                Instruction::Dl { jump: _, ptr } => {
+                    // NOTE: The jump field is handled by DisplayList::parse().
                     if let Ok(data) = ctx.resolve(ptr) {
                         self.interpret_internal(
                             ctx,
                             DisplayList::new(data),
                             translucent,
-                            state,
+                            &mut state.clone(),
                             depth + 1,
                         );
                     } else {
                         *self.unmapped_calls.entry(ptr).or_default() += 1;
-                    }
-                    if jump {
-                        return;
                     }
                 }
                 // 0xdf
@@ -410,6 +429,7 @@ impl DisplayListInterpreter {
 
     fn transform_and_encode_unlit_vertex(
         vertex: &UnlitVertex,
+        matrix: &Matrix,
         scale_s: Qu0_16,
         scale_t: Qu0_16,
     ) -> [u8; 20] {
@@ -418,9 +438,10 @@ impl DisplayListInterpreter {
         let mut w = &mut buf[..];
         // [0..=5] Position
         let pos = vertex.position();
-        w.write_i16::<NativeEndian>(pos[0]).unwrap();
-        w.write_i16::<NativeEndian>(pos[1]).unwrap();
-        w.write_i16::<NativeEndian>(pos[2]).unwrap();
+        let pos = matrix * Point([pos[0], pos[1], pos[2], 1]);
+        w.write_i16::<NativeEndian>(pos.0[0]).unwrap();
+        w.write_i16::<NativeEndian>(pos.0[1]).unwrap();
+        w.write_i16::<NativeEndian>(pos.0[2]).unwrap();
         // [6..=7] Padding
         w.write_u16::<NativeEndian>(0).unwrap();
         // [8..=10] Normal (unused for unlit geometry)
@@ -450,6 +471,7 @@ impl DisplayListInterpreter {
 
     fn transform_and_encode_lit_vertex(
         vertex: &LitVertex,
+        matrix: &Matrix,
         scale_s: Qu0_16,
         scale_t: Qu0_16,
     ) -> [u8; 20] {
@@ -458,9 +480,10 @@ impl DisplayListInterpreter {
         let mut w = &mut buf[..];
         // [0..=5] Position
         let pos = vertex.position();
-        w.write_i16::<NativeEndian>(pos[0]).unwrap();
-        w.write_i16::<NativeEndian>(pos[1]).unwrap();
-        w.write_i16::<NativeEndian>(pos[2]).unwrap();
+        let pos = matrix * Point([pos[0], pos[1], pos[2], 1]);
+        w.write_i16::<NativeEndian>(pos.0[0]).unwrap();
+        w.write_i16::<NativeEndian>(pos.0[1]).unwrap();
+        w.write_i16::<NativeEndian>(pos.0[2]).unwrap();
         // [6..=7] Padding
         w.write_u16::<NativeEndian>(0).unwrap();
         // [8..=10] Normal
@@ -533,6 +556,10 @@ impl DisplayListInterpreter {
 
     pub fn unmapped_calls(&self) -> impl Debug + '_ {
         &self.unmapped_calls
+    }
+
+    pub fn unmapped_matrices(&self) -> impl Debug + '_ {
+        &self.unmapped_matrices
     }
 
     pub fn unmapped_textures(&self) -> impl Debug + '_ {

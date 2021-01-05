@@ -1,17 +1,20 @@
+use byteorder::{BigEndian, ReadBytesExt};
 use oot_explorer_core::fs::VromAddr;
 use oot_explorer_core::gbi::{
     AlphaCombine, ColorCombine, CombinerReference, GeometryMode, OtherModeH, OtherModeHMask,
     OtherModeL, Qu0_16, Qu10_2, Qu1_11, TextureDepth, TextureFormat,
 };
-use std::ops::Range;
+use std::io::{self, Read};
+use std::ops::{Mul, Range};
 use thiserror::Error;
 
 use crate::shader_state::{
     PaletteSource, ShaderState, TexCoordParams, TextureDescriptor, TextureParams, TextureState,
 };
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct RcpState {
+    pub matrix_stack: Vec<Matrix>,
     pub vertex_slots: [Option<[u8; 20]>; 32],
     pub geometry_mode: GeometryMode,
     pub rdp_half_1: Option<u32>,
@@ -40,15 +43,6 @@ impl RcpState {
         // );
 
         let (texture_0, texture_1) = self.get_texture_state();
-        for texture in [texture_0.as_ref(), texture_1.as_ref()]
-            .iter()
-            .flatten()
-            .copied()
-        {
-            if let Some(VromAddr(0x02445b70)) = texture.descriptor.source.src() {
-                eprintln!("RCP state:\n{:#?}", self);
-            }
-        }
         ShaderState {
             two_cycle_mode: match self.rdp_other_mode.hi & OtherModeHMask::CYCLETYPE {
                 x if x == OtherModeH::CYC_1CYCLE => false,
@@ -178,6 +172,168 @@ impl RcpState {
                 },
             },
         })
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Point(pub [i16; 4]);
+
+impl From<[i16; 3]> for Point {
+    fn from(x: [i16; 3]) -> Point {
+        Point([x[0], x[1], x[2], 1])
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Matrix([[i32; 4]; 4]);
+
+impl Matrix {
+    pub fn identity() -> Matrix {
+        Matrix([
+            [0x0001_0000, 0, 0, 0],
+            [0, 0x0001_0000, 0, 0],
+            [0, 0, 0x0001_0000, 0],
+            [0, 0, 0, 0x0001_0000],
+        ])
+    }
+
+    pub fn col(&self, col: usize) -> MatrixCol<'_> {
+        MatrixCol(&self.0[col])
+    }
+
+    pub fn col_mut(&mut self, col: usize) -> MatrixColMut<'_> {
+        MatrixColMut(&mut self.0[col])
+    }
+
+    pub fn from_rsp_format<R: Read>(mut data: R) -> io::Result<Matrix> {
+        let mut high_parts = [0i16; 16];
+        for high_part in &mut high_parts {
+            *high_part = data.read_i16::<BigEndian>()?;
+        }
+
+        let mut result = Matrix([[0; 4]; 4]);
+        for (i, high_part) in high_parts.iter().copied().enumerate() {
+            *result.col_mut(i / 4).row_mut(i % 4) =
+                ((high_part as i32) << 16) | (data.read_u16::<BigEndian>()? as i32);
+        }
+
+        Ok(result)
+    }
+}
+
+impl<'a, 'b> Mul<&'b Matrix> for &'a Matrix {
+    type Output = Matrix;
+
+    fn mul(self, rhs: &'b Matrix) -> Matrix {
+        let mut result = Matrix([[0; 4]; 4]);
+        for r in 0..4 {
+            for c in 0..4 {
+                let mut sum = 0;
+                for k in 0..4 {
+                    sum += (((self.col(k).row(r) as i64) * (rhs.col(c).row(k) as i64) + 0x8000)
+                        >> 16) as i32;
+                }
+                *result.col_mut(r).row_mut(c) = sum;
+            }
+        }
+        result
+    }
+}
+
+impl<'a> Mul<Point> for &'a Matrix {
+    type Output = Point;
+
+    fn mul(self, rhs: Point) -> Point {
+        let mut result = [0; 4];
+        for r in 0..4 {
+            let mut sum = 0;
+            for k in 0..4 {
+                sum += ((self.col(k).row(r) * rhs.0[k] as i32 + 0x8000) >> 16) as i16;
+            }
+            result[r] = sum;
+        }
+        Point(result)
+    }
+}
+
+pub struct MatrixCol<'a>(&'a [i32; 4]);
+
+impl<'a> MatrixCol<'a> {
+    pub fn row(&self, row: usize) -> i32 {
+        self.0[row]
+    }
+}
+
+pub struct MatrixColMut<'a>(&'a mut [i32; 4]);
+
+impl<'a> MatrixColMut<'a> {
+    pub fn row(&self, row: usize) -> i32 {
+        self.0[row]
+    }
+
+    pub fn row_mut(&mut self, row: usize) -> &mut i32 {
+        &mut self.0[row]
+    }
+}
+
+#[cfg(test)]
+mod matrix_tests {
+    use super::{Matrix, Point};
+
+    #[test]
+    fn read() {
+        let expected = {
+            let mut expected = Matrix::identity();
+            *expected.col_mut(3).row_mut(0) = 0x000a_8000;
+            *expected.col_mut(3).row_mut(1) = 0x0014_8000;
+            *expected.col_mut(3).row_mut(2) = 0x001e_8000;
+            expected
+        };
+        let data: &[u8] = &[
+            0, 1, 0, 0, 0, 0, 0, 0, // First integer row.
+            0, 0, 0, 1, 0, 0, 0, 0, // Second integer row.
+            0, 0, 0, 0, 0, 1, 0, 0, // Third integer row.
+            0, 10, 0, 20, 0, 30, 0, 1, // Fourth integer row.
+            0, 0, 0, 0, 0, 0, 0, 0, // First fraction row.
+            0, 0, 0, 0, 0, 0, 0, 0, // Second fraction row.
+            0, 0, 0, 0, 0, 0, 0, 0, // Third fraction row.
+            128, 0, 128, 0, 128, 0, 0, 0, // Fourth fraction row.
+        ];
+        let mut r = data;
+        assert_eq!(Matrix::from_rsp_format(&mut r).unwrap(), expected);
+        assert_eq!(r.len(), 0);
+    }
+
+    #[test]
+    fn identity_product() {
+        assert_eq!(
+            &Matrix::identity() * &Matrix::identity(),
+            Matrix::identity()
+        );
+    }
+
+    #[test]
+    fn scale_point() {
+        let matrix = {
+            let mut matrix = Matrix::identity();
+            *matrix.col_mut(0).row_mut(0) = 0x0002_0000;
+            *matrix.col_mut(1).row_mut(1) = 0x0003_0000;
+            *matrix.col_mut(2).row_mut(2) = 0x0005_0000;
+            matrix
+        };
+        assert_eq!(&matrix * Point([7, 11, 13, 1]), Point([14, 33, 65, 1]));
+    }
+
+    #[test]
+    fn translate_point() {
+        let matrix = {
+            let mut matrix = Matrix::identity();
+            *matrix.col_mut(3).row_mut(0) = 0x0001_0000;
+            *matrix.col_mut(3).row_mut(1) = 0x0002_0000;
+            *matrix.col_mut(3).row_mut(2) = 0x0004_0000;
+            matrix
+        };
+        assert_eq!(&matrix * Point([8, 16, 32, 1]), Point([9, 18, 36, 1]));
     }
 }
 

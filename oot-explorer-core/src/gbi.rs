@@ -78,7 +78,6 @@ pub enum Instruction {
     },
     // 0xda
     Mtx {
-        len: u16,
         flags: MtxFlags,
         ptr: SegmentAddr,
     },
@@ -224,7 +223,6 @@ impl Instruction {
                 set_bits: GeometryMode(u32_b),
             },
             0xda => Instruction::Mtx {
-                len: ((((u32_a >> 19) & 0x1f) << 3) + 1) as u16,
                 flags: MtxFlags(data[3]),
                 ptr: SegmentAddr(u32_b),
             },

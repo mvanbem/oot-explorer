@@ -59,6 +59,7 @@ fn main() {
         println!("total_dlists: {}", dlist_interp.total_dlists());
         println!("total_instructions: {}", dlist_interp.total_instructions());
         println!("unmapped_calls: {:?}", dlist_interp.unmapped_calls());
+        println!("unmapped_matrices: {:?}", dlist_interp.unmapped_matrices());
         println!("unmapped_textures: {:?}", dlist_interp.unmapped_textures());
         println!("max_depth: {}", dlist_interp.max_depth());
         println!("total_lit_verts: {}", dlist_interp.total_lit_verts());

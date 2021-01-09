@@ -162,6 +162,9 @@ impl DisplayListInterpreter {
                             ctx,
                             DisplayList::new(data),
                             translucent,
+                            // NOTE: Clone the RCP state because normally only one path would be
+                            // taken. Since we take both paths, each must be unaffected by the
+                            // other.
                             &mut state.clone(),
                             depth + 1,
                         );
@@ -206,22 +209,27 @@ impl DisplayListInterpreter {
                 Instruction::Mtx { flags, ptr } => {
                     // The projection matrix is not modeled here.
                     if flags & MtxFlags::PROJECTION == MtxFlags::MODELVIEW {
-                        if let Ok(mut data) = ctx.resolve(ptr) {
-                            let rhs = Matrix::from_rsp_format(&mut data).unwrap();
-                            let new_matrix = match flags & MtxFlags::LOAD {
-                                MtxFlags::MUL => &rhs * state.matrix_stack.last().unwrap(),
-                                MtxFlags::LOAD => rhs,
-                                _ => unreachable!(),
-                            };
-                            match flags & MtxFlags::PUSH {
-                                MtxFlags::NOPUSH => {
-                                    *state.matrix_stack.last_mut().unwrap() = new_matrix
-                                }
-                                MtxFlags::PUSH => state.matrix_stack.push(new_matrix),
-                                _ => unreachable!(),
-                            };
+                        let new_matrix = if let Ok(mut data) = ctx.resolve(ptr) {
+                            Matrix::from_rsp_format(&mut data).unwrap()
                         } else {
-                            *self.unmapped_matrices.entry(ptr).or_default() += 1;
+                            // NOTE: This doesn't seem right at all, but I can't get Jabu's main
+                            // room to look right unless matrix loads from unmapped regions are
+                            // totally skipped. Working with an identity matrix messes it up badly.
+                            // This might just be an artifact of not modeling the scene render
+                            // function.
+                            return;
+                        };
+                        let product = match flags & MtxFlags::LOAD {
+                            MtxFlags::MUL => state.matrix_stack.last().unwrap() * &new_matrix,
+                            MtxFlags::LOAD => new_matrix,
+                            _ => unreachable!(),
+                        };
+                        match (flags & MtxFlags::PUSH, state.matrix_stack.len()) {
+                            (MtxFlags::NOPUSH, _) | (MtxFlags::PUSH, 10) => {
+                                *state.matrix_stack.last_mut().unwrap() = product
+                            }
+                            (MtxFlags::PUSH, _) => state.matrix_stack.push(product),
+                            _ => unreachable!(),
                         }
                     }
                 }
@@ -233,6 +241,10 @@ impl DisplayListInterpreter {
                             ctx,
                             DisplayList::new(data),
                             translucent,
+                            // NOTE: It really seems like calling another display list and returning
+                            // to continue should not fork the RCP state. But it seems like I have
+                            // to do this to get Jabu's main room to look right, maybe because of
+                            // other bugs.
                             &mut state.clone(),
                             depth + 1,
                         );

@@ -63,7 +63,7 @@ impl Context {
         }
     }
 
-    #[wasm_bindgen(js_name = "processScene")]
+    #[wasm_bindgen(js_name = processScene)]
     pub fn process_scene(&mut self, scene_index: usize) -> JsValue {
         let Context {
             ref gl,
@@ -118,12 +118,17 @@ impl Context {
         })
     }
 
-    #[wasm_bindgen(js_name = "getTexture")]
+    #[wasm_bindgen(getter = sceneCount)]
+    pub fn scene_count(&self) -> u32 {
+        versions::oot_ntsc_10::SCENE_TABLE_COUNT as u32
+    }
+
+    #[wasm_bindgen(js_name = getTexture)]
     pub fn get_texture(&self, key: u32) -> Option<WebGlTexture> {
         self.texture_cache.get_with_key(key).cloned()
     }
 
-    #[wasm_bindgen(js_name = "getSampler")]
+    #[wasm_bindgen(js_name = getSampler)]
     pub fn get_sampler(&self, key: u32) -> Option<WebGlSampler> {
         self.sampler_cache.get_with_key(key).cloned()
     }

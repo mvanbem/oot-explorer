@@ -223,7 +223,7 @@ impl Instruction {
                 set_bits: GeometryMode(u32_b),
             },
             0xda => Instruction::Mtx {
-                flags: MtxFlags(data[3]),
+                flags: MtxFlags(data[3]) ^ MtxFlags::PUSH,
                 ptr: SegmentAddr(u32_b),
             },
             0xde => Instruction::Dl {

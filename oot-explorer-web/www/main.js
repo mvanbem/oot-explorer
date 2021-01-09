@@ -410,9 +410,15 @@ class MainView {
       }
 
       if (key === 'PageDown') {
-        this.changeScene(this.sceneIndex + 1);
+        let newSceneIndex = this.sceneIndex + 1;
+        if (newSceneIndex < this.ctx.sceneCount) {
+          this.changeScene(newSceneIndex);
+        }
       } else if (key === 'PageUp') {
-        this.changeScene(this.sceneIndex - 1);
+        let newSceneIndex = this.sceneIndex - 1;
+        if (newSceneIndex >= 0) {
+          this.changeScene(newSceneIndex);
+        }
       }
     });
     window.addEventListener('keyup', e => {

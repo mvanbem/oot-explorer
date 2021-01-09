@@ -219,6 +219,16 @@ impl Matrix {
 
         Ok(result)
     }
+
+    pub fn to_f64_array(&self) -> [[f64; 4]; 4] {
+        let mut result = [[0.0; 4]; 4];
+        for c in 0..4 {
+            for r in 0..4 {
+                result[c][r] = (self.col(c).row(r) as f64) / 65536.0;
+            }
+        }
+        result
+    }
 }
 
 impl<'a, 'b> Mul<&'b Matrix> for &'a Matrix {

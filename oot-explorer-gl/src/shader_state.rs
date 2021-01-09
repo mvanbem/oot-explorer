@@ -99,7 +99,8 @@ precision highp int;
         .unwrap();
 
         if references.test(CombinerReference::PRIMITIVE) {
-            let prim = self.primitive_color.expect("undefined primitive color");
+            // TODO: Determine an appropriate default primitive color.
+            let prim = self.primitive_color.unwrap_or([128; 4]);
             write!(
                 glsl,
                 "vec4 prim = vec4({}.0, {}.0, {}.0, {}.0) / 255.0;\n",

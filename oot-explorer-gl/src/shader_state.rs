@@ -18,6 +18,7 @@ pub struct ShaderState {
     pub texture_0: Option<TextureState>,
     pub texture_1: Option<TextureState>,
     pub z_upd: bool,
+    pub decal: bool,
 }
 
 impl ShaderState {

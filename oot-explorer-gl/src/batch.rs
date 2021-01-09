@@ -7,6 +7,7 @@ pub struct Batch {
     pub translucent: bool,
     pub textures: Vec<TextureState>,
     pub z_upd: bool,
+    pub decal: bool,
 }
 
 impl Batch {
@@ -25,6 +26,7 @@ impl Batch {
             translucent,
             textures,
             z_upd: shader_state.z_upd,
+            decal: shader_state.decal,
         }
     }
 }

@@ -538,6 +538,7 @@ class MainView {
         count: batch.vertexData.byteLength / 20,
         textures: textures[i],
         zUpd: batch.zUpd,
+        decal: batch.decal,
       });
     }
     this.batches = [].concat(opaqueBatches, translucentBatches);
@@ -612,7 +613,7 @@ class MainView {
 
     let projectionMatrix = mat4.create();
     mat4.perspective(
-      projectionMatrix, 0.5 * Math.PI, this.w / this.h, 1, 10000.0);
+      projectionMatrix, 0.5 * Math.PI, this.w / this.h, 1, 20000.0);
 
     let modelViewMatrix = mat4.create();
     mat4.rotateX(modelViewMatrix, modelViewMatrix, -this.view.pitch);
@@ -638,6 +639,12 @@ class MainView {
         gl.disable(gl.BLEND);
       }
       gl.depthMask(batch.zUpd);
+      if (batch.decal) {
+        gl.enable(gl.POLYGON_OFFSET_FILL);
+        gl.polygonOffset(-1, -1);
+      } else {
+        gl.disable(gl.POLYGON_OFFSET_FILL);
+      }
 
       gl.uniformMatrix4fv(
         gl.getUniformLocation(batch.program, 'u_projectionMatrix'),

@@ -40,6 +40,7 @@ struct ProcessSceneBatch<'a> {
     translucent: bool,
     textures: Vec<ProcessSceneTexture>,
     z_upd: bool,
+    decal: bool,
 }
 
 #[derive(Serialize)]
@@ -111,6 +112,7 @@ impl Context {
                     translucent: batch.translucent,
                     textures,
                     z_upd: batch.z_upd,
+                    decal: batch.decal,
                 });
             }
 

@@ -2,7 +2,7 @@ use byteorder::{BigEndian, ReadBytesExt};
 use oot_explorer_core::fs::VromAddr;
 use oot_explorer_core::gbi::{
     AlphaCombine, ColorCombine, CombinerReference, GeometryMode, OtherModeH, OtherModeHMask,
-    OtherModeL, Qu0_16, Qu10_2, Qu1_11, TextureDepth, TextureFormat,
+    OtherModeL, OtherModeLMask, Qu0_16, Qu10_2, Qu1_11, TextureDepth, TextureFormat,
 };
 use std::io::{self, Read};
 use std::ops::{Mul, Range};
@@ -59,6 +59,11 @@ impl RcpState {
             texture_0,
             texture_1,
             z_upd: self.rdp_other_mode.lo.test(OtherModeL::Z_UPD),
+            decal: match self.rdp_other_mode.lo & OtherModeLMask::ZMODE {
+                OtherModeL::ZMODE_OPA | OtherModeL::ZMODE_INTER | OtherModeL::ZMODE_XLU => false,
+                OtherModeL::ZMODE_DEC => true,
+                _ => unreachable!(),
+            },
         }
     }
 

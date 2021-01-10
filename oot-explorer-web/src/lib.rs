@@ -1,6 +1,8 @@
 use oot_explorer_core::fs::LazyFileSystem;
 use oot_explorer_core::header::{RoomHeader, SceneHeader};
-use oot_explorer_core::mesh::MeshVariant;
+use oot_explorer_core::mesh::{
+    Background, ClippedMeshEntry, JfifMeshVariant, MeshVariant, SimpleMeshEntry,
+};
 use oot_explorer_core::rom::Rom;
 use oot_explorer_core::room::Room;
 use oot_explorer_core::scene::Scene;
@@ -29,6 +31,14 @@ pub struct Context {
     rom_data: Box<[u8]>,
     texture_cache: TextureCache,
     sampler_cache: SamplerCache,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProcessSceneResult<'a> {
+    batches: Vec<ProcessSceneBatch<'a>>,
+    backgrounds: Vec<String>,
+    start_pos: Option<[f64; 5]>,
 }
 
 #[derive(Serialize)]
@@ -75,12 +85,13 @@ impl Context {
         let rom = Rom::new(rom_data);
         ScopedOwner::with_scope(|scope| {
             let mut fs = LazyFileSystem::new(rom, versions::oot_ntsc_10::FILE_TABLE_ROM_ADDR);
-            let mut dlist_interp = DisplayListInterpreter::new();
-
             let scene = versions::oot_ntsc_10::get_scene_table(scope, &mut fs)
                 .get(scene_index)
                 .scene(scope, &mut fs);
-            examine_scene(scope, &mut fs, scene, &mut dlist_interp);
+            let mut dlist_interp = DisplayListInterpreter::new();
+            let mut backgrounds = vec![];
+            let start_pos =
+                examine_scene(scope, &mut fs, scene, &mut dlist_interp, &mut backgrounds);
 
             // TODO: Set up a web-friendly logger of some kind.
             println!("total_dlists: {}", dlist_interp.total_dlists());
@@ -116,7 +127,12 @@ impl Context {
                 });
             }
 
-            serde_wasm_bindgen::to_value(&batches).unwrap()
+            serde_wasm_bindgen::to_value(&ProcessSceneResult {
+                batches,
+                backgrounds,
+                start_pos,
+            })
+            .unwrap()
         })
     }
 
@@ -141,20 +157,37 @@ fn examine_scene<'a>(
     fs: &mut LazyFileSystem<'a>,
     scene: Scene<'a>,
     dlist_interp: &mut DisplayListInterpreter,
-) {
+    backgrounds: &mut Vec<String>,
+) -> Option<[f64; 5]> {
     let ctx = {
         let mut ctx = SegmentCtx::new();
         ctx.set(Segment::SCENE, scene.data(), scene.vrom_range());
         ctx
     };
+    let mut start_pos = None;
     for header in scene.headers() {
-        if let SceneHeader::RoomList(header) = header {
-            for room_list_entry in header.room_list(&ctx) {
-                let room = room_list_entry.room(scope, fs);
-                examine_room(scope, fs, scene, room, dlist_interp);
+        match header {
+            SceneHeader::StartPositions(header) => {
+                start_pos = header.actor_list(&ctx).iter().next().map(|actor| {
+                    [
+                        actor.pos_x() as f64,
+                        actor.pos_y() as f64,
+                        actor.pos_z() as f64,
+                        actor.angle_x() as f64 * std::f64::consts::TAU / 65536.0,
+                        actor.angle_y() as f64 * std::f64::consts::TAU / 65536.0,
+                    ]
+                });
             }
+            SceneHeader::RoomList(header) => {
+                for room_list_entry in header.room_list(&ctx) {
+                    let room = room_list_entry.room(scope, fs);
+                    examine_room(scope, fs, scene, room, dlist_interp, backgrounds);
+                }
+            }
+            _ => (),
         }
     }
+    start_pos
 }
 
 fn examine_room<'a>(
@@ -163,6 +196,7 @@ fn examine_room<'a>(
     scene: Scene<'a>,
     room: Room<'a>,
     dlist_interp: &mut DisplayListInterpreter,
+    backgrounds: &mut Vec<String>,
 ) {
     let cpu_ctx = {
         let mut ctx = SegmentCtx::new();
@@ -188,28 +222,60 @@ fn examine_room<'a>(
 
         ctx
     };
+
+    let handle_simple_mesh_entry = |dlist_interp: &mut DisplayListInterpreter,
+                                    entry: SimpleMeshEntry<'a>| {
+        if let Ok(Some(dlist)) = entry.opaque_display_list(&cpu_ctx) {
+            dlist_interp.interpret(&rsp_ctx, false, dlist);
+        }
+        if let Ok(Some(dlist)) = entry.translucent_display_list(&cpu_ctx) {
+            dlist_interp.interpret(&rsp_ctx, true, dlist);
+        }
+    };
+
+    let handle_clipped_mesh_entry =
+        |dlist_interp: &mut DisplayListInterpreter, entry: ClippedMeshEntry<'a>| {
+            if let Ok(Some(dlist)) = entry.opaque_display_list(&cpu_ctx) {
+                dlist_interp.interpret(&rsp_ctx, false, dlist);
+            }
+            if let Ok(Some(dlist)) = entry.translucent_display_list(&cpu_ctx) {
+                dlist_interp.interpret(&rsp_ctx, true, dlist);
+            }
+        };
+
+    let background_to_string = |background: Background<'a>| {
+        // TODO: Could definitely pre-allocate here instead of growing incrementally.
+        let mut result = "data:image/jpeg;base64,".to_string();
+        let data = cpu_ctx.resolve(background.ptr()).unwrap();
+        base64::encode_config_buf(data, base64::STANDARD_NO_PAD, &mut result);
+        result
+    };
+
     for header in room.headers() {
         if let RoomHeader::Mesh(header) = header {
             match header.mesh(&cpu_ctx).variant() {
                 MeshVariant::Simple(mesh) => {
                     for entry in mesh.entries(&cpu_ctx) {
-                        if let Ok(Some(dlist)) = entry.opaque_display_list(&cpu_ctx) {
-                            dlist_interp.interpret(&rsp_ctx, false, dlist);
-                        }
-                        if let Ok(Some(dlist)) = entry.translucent_display_list(&cpu_ctx) {
-                            dlist_interp.interpret(&rsp_ctx, true, dlist);
-                        }
+                        handle_simple_mesh_entry(dlist_interp, entry);
                     }
                 }
-                MeshVariant::Jfif(_) => (),
+                MeshVariant::Jfif(mesh) => match mesh.variant() {
+                    JfifMeshVariant::Single(mesh) => {
+                        handle_simple_mesh_entry(dlist_interp, mesh.mesh_entry(&cpu_ctx));
+                        backgrounds.push(background_to_string(mesh.background()));
+                    }
+                    JfifMeshVariant::Multiple(mesh) => {
+                        for entry in mesh.mesh_entries(&cpu_ctx) {
+                            handle_simple_mesh_entry(dlist_interp, entry);
+                        }
+                        for entry in mesh.background_entries(&cpu_ctx) {
+                            backgrounds.push(background_to_string(entry.background()));
+                        }
+                    }
+                },
                 MeshVariant::Clipped(mesh) => {
                     for entry in mesh.entries(&cpu_ctx) {
-                        if let Ok(Some(dlist)) = entry.opaque_display_list(&cpu_ctx) {
-                            dlist_interp.interpret(&rsp_ctx, false, dlist);
-                        }
-                        if let Ok(Some(dlist)) = entry.translucent_display_list(&cpu_ctx) {
-                            dlist_interp.interpret(&rsp_ctx, true, dlist);
-                        }
+                        handle_clipped_mesh_entry(dlist_interp, entry);
                     }
                 }
             };

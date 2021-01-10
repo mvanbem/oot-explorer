@@ -404,7 +404,7 @@ impl<'a> MeshHeader<'a> {
         SegmentAddr((&self.data[4..]).read_u32::<BigEndian>().unwrap())
     }
 
-    pub fn mesh(self, segment_ctx: &'a SegmentCtx) -> Mesh<'a> {
+    pub fn mesh(self, segment_ctx: &SegmentCtx<'a>) -> Mesh<'a> {
         Mesh::new(segment_ctx.resolve(self.ptr()).unwrap())
     }
 }
@@ -786,7 +786,18 @@ impl<'a> Actor<'a> {
     pub fn pos_z(self) -> i16 {
         (&self.data[6..]).read_i16::<BigEndian>().unwrap()
     }
-    // TODO: other properties
+    pub fn angle_x(self) -> i16 {
+        (&self.data[8..]).read_i16::<BigEndian>().unwrap()
+    }
+    pub fn angle_y(self) -> i16 {
+        (&self.data[10..]).read_i16::<BigEndian>().unwrap()
+    }
+    pub fn angle_z(self) -> i16 {
+        (&self.data[12..]).read_i16::<BigEndian>().unwrap()
+    }
+    pub fn init(self) -> u16 {
+        (&self.data[14..]).read_u16::<BigEndian>().unwrap()
+    }
 }
 
 #[derive(Clone, Copy)]

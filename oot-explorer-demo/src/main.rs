@@ -1,7 +1,7 @@
 use oot_explorer_core::fs::LazyFileSystem;
 use oot_explorer_core::gbi::DisplayList;
 use oot_explorer_core::header::{MeshHeader, RoomHeader, SceneHeader};
-use oot_explorer_core::mesh::MeshVariant;
+use oot_explorer_core::mesh::{Background, JfifMeshVariant, MeshVariant, SimpleMeshEntry};
 use oot_explorer_core::rom::Rom;
 use oot_explorer_core::room::Room;
 use oot_explorer_core::scene::Scene;
@@ -131,6 +131,24 @@ fn examine_room<'a>(
                     |translucent, dlist| {
                         dlist_interp.interpret(&ctx, translucent, dlist);
                     },
+                    |background| {
+                        let segment_ptr = background.ptr();
+                        let vrom_addr = ctx.resolve_vrom(segment_ptr).unwrap().start;
+
+                        std::fs::write(
+                            {
+                                let mut path = PathBuf::from("./backgrounds");
+                                path.push(&format!("0x{:08x}.jpg", vrom_addr.0));
+                                path
+                            },
+                            // TODO: Limit this to the JFIF data. As written, all data in the
+                            // containing file after the JFIF data also gets appended to the
+                            // exported file. This should be harmless, but wastes space and is
+                            // sloppy.
+                            ctx.resolve(segment_ptr).unwrap(),
+                        )
+                        .unwrap();
+                    },
                 );
             }
             _ => (),
@@ -138,47 +156,73 @@ fn examine_room<'a>(
     }
 }
 
-fn enumerate_meshes<'a, F>(
+fn enumerate_meshes<'a, F, G>(
     ctx: &SegmentCtx<'a>,
     scene_index: usize,
     room_index: usize,
     header: MeshHeader<'a>,
     mut f: F,
+    mut g: G,
 ) where
     F: FnMut(bool, DisplayList),
+    G: FnMut(Background<'a>),
 {
+    let mut handle_simple_mesh_entry = |entry: SimpleMeshEntry<'a>| {
+        match entry.opaque_display_list(ctx) {
+            Ok(Some(dlist)) => f(false, dlist),
+            Ok(None) => (),
+            Err(SegmentResolveError::Unmapped { .. }) => {
+                eprintln!(
+                    "scene {}, room {}: unmapped segment for display list at {:?}",
+                    scene_index,
+                    room_index,
+                    entry.opaque_display_list_ptr().unwrap(),
+                )
+            }
+        }
+        match entry.translucent_display_list(ctx) {
+            Ok(Some(dlist)) => f(true, dlist),
+            Ok(None) => (),
+            Err(SegmentResolveError::Unmapped { .. }) => {
+                eprintln!(
+                    "scene {}, room {}: unmapped segment for display list at {:?}",
+                    scene_index,
+                    room_index,
+                    entry.translucent_display_list_ptr().unwrap(),
+                )
+            }
+        }
+    };
+
     match header.mesh(&ctx).variant() {
         MeshVariant::Simple(mesh) => {
-            for entry in mesh.entries(&ctx) {
-                match entry.opaque_display_list(ctx) {
-                    Ok(Some(dlist)) => f(false, dlist),
-                    Ok(None) => (),
-                    Err(SegmentResolveError::Unmapped { .. }) => {
-                        eprintln!(
-                            "scene {}, room {}: unmapped segment for display list at {:?}",
-                            scene_index,
-                            room_index,
-                            entry.opaque_display_list_ptr().unwrap(),
-                        )
-                    }
+            mesh.entries(&ctx).iter().for_each(handle_simple_mesh_entry);
+        }
+        MeshVariant::Jfif(jfif) => {
+            let data = jfif.data();
+            eprintln!(
+                "{:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
+                data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+            );
+
+            match jfif.variant() {
+                JfifMeshVariant::Single(single) => {
+                    handle_simple_mesh_entry(single.mesh_entry(ctx));
+                    g(single.background());
                 }
-                match entry.translucent_display_list(ctx) {
-                    Ok(Some(dlist)) => f(true, dlist),
-                    Ok(None) => (),
-                    Err(SegmentResolveError::Unmapped { .. }) => {
-                        eprintln!(
-                            "scene {}, room {}: unmapped segment for display list at {:?}",
-                            scene_index,
-                            room_index,
-                            entry.translucent_display_list_ptr().unwrap(),
-                        )
+                JfifMeshVariant::Multiple(multiple) => {
+                    multiple
+                        .mesh_entries(ctx)
+                        .iter()
+                        .for_each(handle_simple_mesh_entry);
+                    for entry in multiple.background_entries(ctx) {
+                        g(entry.background());
                     }
                 }
             }
         }
-        MeshVariant::Jfif(_) => (),
         MeshVariant::Clipped(mesh) => {
-            for entry in mesh.entries(&ctx) {
+            for entry in mesh.entries(ctx) {
                 match entry.opaque_display_list(ctx) {
                     Ok(Some(dlist)) => f(false, dlist),
                     Ok(None) => (),

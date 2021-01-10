@@ -1,9 +1,10 @@
-use crate::gbi::DisplayList;
-use crate::segment::{SegmentAddr, SegmentCtx, SegmentResolveError};
-use crate::slice::{Slice, StructReader};
 use byteorder::{BigEndian, ReadBytesExt};
 use std::fmt::{self, Debug, Formatter};
 use std::ops::RangeInclusive;
+
+use crate::gbi::DisplayList;
+use crate::segment::{SegmentAddr, SegmentCtx, SegmentResolveError};
+use crate::slice::{Slice, StructReader};
 
 #[derive(Clone, Copy)]
 pub struct Mesh<'a> {
@@ -27,7 +28,7 @@ impl<'a> Mesh<'a> {
         let data = self.data;
         match self.type_() {
             0x00 => MeshVariant::Simple(SimpleMesh { data }),
-            0x01 => MeshVariant::Jfif(JfifMesh { _data: data }),
+            0x01 => MeshVariant::Jfif(JfifMesh { data }),
             0x02 => MeshVariant::Clipped(ClippedMesh { data }),
             type_ => panic!("unexpected mesh type: 0x{:02x}", type_),
         }
@@ -45,8 +46,8 @@ pub enum MeshVariant<'a> {
 pub struct SimpleMesh<'a> {
     data: &'a [u8],
 }
-impl<'a> std::fmt::Debug for SimpleMesh<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl<'a> Debug for SimpleMesh<'a> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_struct("SimpleMesh").finish()
     }
 }
@@ -76,8 +77,8 @@ impl<'a> SimpleMesh<'a> {
 pub struct SimpleMeshEntry<'a> {
     data: &'a [u8],
 }
-impl<'a> std::fmt::Debug for SimpleMeshEntry<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl<'a> Debug for SimpleMeshEntry<'a> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_struct("SimpleMeshEntry")
             .field("opaque_display_list_ptr", &self.opaque_display_list_ptr())
             .field(
@@ -127,11 +128,132 @@ impl<'a> SimpleMeshEntry<'a> {
 
 #[derive(Clone, Copy)]
 pub struct JfifMesh<'a> {
-    _data: &'a [u8],
+    data: &'a [u8],
 }
-impl<'a> std::fmt::Debug for JfifMesh<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+
+impl<'a> JfifMesh<'a> {
+    pub fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub fn format(self) -> u8 {
+        self.data[1]
+    }
+
+    pub fn variant(self) -> JfifMeshVariant<'a> {
+        let data = self.data;
+        match self.format() {
+            0x01 => JfifMeshVariant::Single(SingleJfif { data }),
+            0x02 => JfifMeshVariant::Multiple(MultipleJfif { data }),
+            format => panic!("unexpected JFIF format: 0x{:02x}", format),
+        }
+    }
+}
+
+impl<'a> Debug for JfifMesh<'a> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.debug_struct("JfifMesh").finish()
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum JfifMeshVariant<'a> {
+    Single(SingleJfif<'a>),
+    Multiple(MultipleJfif<'a>),
+}
+
+#[derive(Clone, Copy)]
+pub struct SingleJfif<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> SingleJfif<'a> {
+    pub fn mesh_entry_ptr(self) -> SegmentAddr {
+        SegmentAddr((&self.data[4..]).read_u32::<BigEndian>().unwrap())
+    }
+
+    pub fn mesh_entry(self, segment_ctx: &SegmentCtx<'a>) -> SimpleMeshEntry<'a> {
+        SimpleMeshEntry {
+            data: segment_ctx.resolve(self.mesh_entry_ptr()).unwrap(),
+        }
+    }
+
+    pub fn background(self) -> Background<'a> {
+        Background {
+            data: &self.data[8..],
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct MultipleJfif<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> MultipleJfif<'a> {
+    pub fn mesh_entries_ptr(self) -> SegmentAddr {
+        SegmentAddr((&self.data[4..]).read_u32::<BigEndian>().unwrap())
+    }
+
+    pub fn mesh_entries(self, segment_ctx: &SegmentCtx<'a>) -> Slice<'a, SimpleMeshEntry<'a>> {
+        Slice::new(
+            segment_ctx.resolve(self.mesh_entries_ptr()).unwrap(),
+            self.count() as usize,
+        )
+    }
+
+    pub fn count(self) -> u8 {
+        self.data[8]
+    }
+
+    pub fn ptr(self) -> SegmentAddr {
+        SegmentAddr((&self.data[0x0c..]).read_u32::<BigEndian>().unwrap())
+    }
+
+    pub fn background_entries(
+        self,
+        segment_ctx: &SegmentCtx<'a>,
+    ) -> Slice<'a, MultipleJfifEntry<'a>> {
+        Slice::new(
+            segment_ctx.resolve(self.ptr()).unwrap(),
+            self.count() as usize,
+        )
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct MultipleJfifEntry<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> MultipleJfifEntry<'a> {
+    pub fn id(self) -> i8 {
+        self.data[2] as i8
+    }
+
+    pub fn background(self) -> Background<'a> {
+        Background {
+            data: &self.data[4..],
+        }
+    }
+}
+
+impl<'a> StructReader<'a> for MultipleJfifEntry<'a> {
+    const SIZE: usize = 0x1c;
+
+    fn new(data: &'a [u8]) -> MultipleJfifEntry<'a> {
+        MultipleJfifEntry { data }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct Background<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> Background<'a> {
+    pub fn ptr(self) -> SegmentAddr {
+        SegmentAddr((&self.data[..]).read_u32::<BigEndian>().unwrap())
     }
 }
 

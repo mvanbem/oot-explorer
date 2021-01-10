@@ -278,6 +278,39 @@ class RomView {
   }
 }
 
+const BACKGROUND_VERTEX_SHADER_SOURCE = `#version 300 es
+
+precision highp float;
+precision highp int;
+
+uniform vec2 u_scale;
+
+layout(location = 0) in vec2 vertex;
+
+out vec2 v_texCoord;
+
+void main() {
+  gl_Position = vec4((vertex * vec2(2.0) - vec2(1.0)) * u_scale, 0.0, 1.0);
+  v_texCoord = vertex;
+}
+`;
+
+const BACKGROUND_FRAGMENT_SHADER_SOURCE = `#version 300 es
+
+precision highp float;
+precision highp int;
+
+uniform sampler2D u_texture;
+
+in vec2 v_texCoord;
+
+layout(location = 0) out vec4 fragColor;
+
+void main() {
+  fragColor = texture(u_texture, v_texCoord);
+}
+`;
+
 const VERTEX_SHADER_SOURCE = `#version 300 es
 
 precision highp float;
@@ -321,6 +354,17 @@ function glInitShader(gl, type, source) {
     console.log('shader source:\n' + source);
     throw e;
   }
+}
+
+function glInitProgram(gl, vertexSource, fragmentSource) {
+  let program = gl.createProgram();
+  gl.attachShader(program, glInitShader(gl, gl.VERTEX_SHADER, vertexSource));
+  gl.attachShader(program, glInitShader(gl, gl.FRAGMENT_SHADER, fragmentSource));
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    throw new Error('failed to link program: ' + gl.getProgramInfoLog(program));
+  }
+  return program;
 }
 
 function addLineNumbers(text) {
@@ -449,6 +493,27 @@ class MainView {
       pitch: 0,
     };
 
+    this.backgroundProgram = glInitProgram(gl, BACKGROUND_VERTEX_SHADER_SOURCE,
+      BACKGROUND_FRAGMENT_SHADER_SOURCE);
+    this.backgroundVertexBuffer = (() => {
+      let data = new Float32Array(12);
+      data.set([
+        0, 1,
+        1, 0,
+        0, 0,
+
+        0, 1,
+        1, 1,
+        1, 0,
+      ]);
+      console.log(data);
+
+      let buffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, data.buffer, gl.STATIC_DRAW);
+      return buffer;
+    })();
+
     this.ctx = new core.Context(this.gl, new Uint8Array(rom));
     this.batches = null;
     this.sceneIndex = null;
@@ -472,13 +537,12 @@ class MainView {
     Status.show('Processing scene...');
     await this.nextStep();
 
-    let t1 = performance.now();
     let processedScene = this.ctx.processScene(sceneIndex);
 
     // Compile shaders for all batches.
     let vertexShader = glInitShader(gl, gl.VERTEX_SHADER, VERTEX_SHADER_SOURCE);
     let fragmentShaders = [];
-    for (let batch of processedScene) {
+    for (let batch of processedScene.batches) {
       let shader = gl.createShader(gl.FRAGMENT_SHADER);
       gl.shaderSource(shader, batch.fragmentShader);
       gl.compileShader(shader);
@@ -488,7 +552,7 @@ class MainView {
     // Load vertex buffers and textures for all batches.
     let vertexBuffers = [];
     let textures = [];
-    for (let batch of processedScene) {
+    for (let batch of processedScene.batches) {
       let buffer = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
       gl.bufferData(gl.ARRAY_BUFFER, batch.vertexData, gl.STATIC_DRAW);
@@ -508,7 +572,7 @@ class MainView {
 
     // Link programs for all batches.
     let programs = [];
-    for (let i = 0; i < processedScene.length; ++i) {
+    for (let i = 0; i < processedScene.batches.length; ++i) {
       let program = gl.createProgram();
       gl.attachShader(program, vertexShader);
       gl.attachShader(program, fragmentShaders[i]);
@@ -519,7 +583,7 @@ class MainView {
     // Assemble all batches to be drawn.
     let opaqueBatches = [];
     let translucentBatches = [];
-    for (let i = 0; i < processedScene.length; ++i) {
+    for (let i = 0; i < processedScene.batches.length; ++i) {
       if (!gl.getProgramParameter(programs[i], gl.LINK_STATUS)) {
         console.log('program info log:', gl.getProgramInfoLog(programs[i]));
         console.log('vertex shader info log:', gl.getShaderInfoLog(vertexShader));
@@ -528,7 +592,7 @@ class MainView {
         throw new Error('failed to link GL program');
       }
 
-      let batch = processedScene[i];
+      let batch = processedScene.batches[i];
       let collection = batch.translucent ? translucentBatches : opaqueBatches;
       collection.push({
         program: programs[i],
@@ -541,11 +605,46 @@ class MainView {
         decal: batch.decal,
       });
     }
+
+    let backgrounds = [];
+    for (let i = 0; i < processedScene.backgrounds.length; ++i) {
+      let img = document.createElement('img');
+      img.src = processedScene.backgrounds[i];
+      let bitmap = await new Promise(resolve => {
+        img.onload = () => resolve(createImageBitmap(img));
+      });
+
+      let texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      backgrounds.push(texture);
+    }
+    if (processedScene.backgrounds.length > 1) {
+      console.log('WARNING: found ' + processedScene.backgrounds.length
+        + ' backgrounds in this scene!');
+    }
+
+    // Publish all new data.
     this.batches = [].concat(opaqueBatches, translucentBatches);
+    this.backgrounds = backgrounds;
+    if (processedScene.startPos) {
+      this.view = {
+        pos: vec3.clone([
+          processedScene.startPos[0],
+          processedScene.startPos[1] + 50,
+          processedScene.startPos[2],
+        ]),
+        yaw: (processedScene.startPos[4] + Math.PI) % (2 * Math.PI),
+        pitch: processedScene.startPos[3],
+      };
+    }
 
-    let t2 = performance.now();
-
-    Status.show('Ready. (' + Math.round(t2 - t1) + ' ms)');
+    Status.hide();
   }
 
   updateDimensions() {
@@ -608,6 +707,36 @@ class MainView {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.viewport(0, 0, this.w, this.h);
 
+    // Draw the background, if any.
+    if (this.backgrounds && this.backgrounds.length > 0) {
+      gl.useProgram(this.backgroundProgram);
+      gl.uniform2f(
+        gl.getUniformLocation(this.backgroundProgram, "u_scale"),
+        Math.min(1, this.h * 4 / 3 / this.w),
+        -Math.min(1, this.w * 3 / 4 / this.h),
+      );
+
+      gl.depthMask(false);
+      gl.disable(gl.DEPTH_TEST);
+      gl.disable(gl.CULL_FACE);
+      gl.disable(gl.BLEND);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.backgroundVertexBuffer);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 8, 0);
+      gl.enableVertexAttribArray(0);
+      gl.disableVertexAttribArray(1);
+      gl.disableVertexAttribArray(2);
+      gl.disableVertexAttribArray(3);
+      gl.disableVertexAttribArray(4);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindSampler(0, null);
+      gl.bindTexture(gl.TEXTURE_2D, this.backgrounds[0]);
+      gl.uniform1i(gl.getUniformLocation(this.backgroundProgram, "u_texture"), 0);
+
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
+
     gl.depthFunc(gl.LEQUAL);
     gl.frontFace(gl.CCW);
 
@@ -634,7 +763,6 @@ class MainView {
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
       } else {
-        gl.depthMask(true);
         gl.enable(gl.CULL_FACE);
         gl.disable(gl.BLEND);
       }

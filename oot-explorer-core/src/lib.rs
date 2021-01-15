@@ -4,6 +4,7 @@ pub mod gbi;
 pub mod header;
 pub mod mesh;
 pub mod object;
+pub mod reflect;
 pub mod rom;
 pub mod room;
 pub mod scene;

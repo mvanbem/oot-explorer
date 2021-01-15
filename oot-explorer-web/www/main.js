@@ -506,7 +506,6 @@ class MainView {
         1, 1,
         1, 0,
       ]);
-      console.log(data);
 
       let buffer = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer);

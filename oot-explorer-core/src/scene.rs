@@ -1,14 +1,22 @@
-use crate::fs::VromAddr;
-use crate::header::{self, SceneHeader};
-use crate::slice::StructReader;
 use byteorder::{BigEndian, ReadBytesExt};
+use reflect::Sourced;
+use std::borrow::Cow;
 use std::ops::Range;
+
+use crate::fs::VromAddr;
+use crate::header::scene::iter::SceneHeaderIter;
+use crate::header::scene::type_::SceneHeaderType;
+use crate::header::scene::variant::SceneHeaderVariant;
+use crate::header::scene::SceneHeader;
+use crate::reflect::{self, Field, Reflect, Value};
+use crate::slice::StructReader;
 
 #[derive(Clone, Copy)]
 pub struct Scene<'a> {
     addr: VromAddr,
     data: &'a [u8],
 }
+
 impl<'a> Scene<'a> {
     pub fn new(addr: VromAddr, data: &'a [u8]) -> Scene<'a> {
         Scene { addr, data }
@@ -22,8 +30,74 @@ impl<'a> Scene<'a> {
     pub fn data(self) -> &'a [u8] {
         self.data
     }
-    pub fn headers(self) -> impl Iterator<Item = SceneHeader<'a>> {
-        header::Iter::new(self.data).map(|header| header.scene_header())
+    pub fn headers(self) -> impl Iterator<Item = SceneHeaderVariant<'a>> {
+        SceneHeaderIter::new(self.data).map(|header| header.scene_header())
+    }
+}
+
+impl<'a> Reflect for Scene<'a> {
+    fn name(&self) -> Cow<'static, str> {
+        Cow::Borrowed("Scene")
+    }
+
+    fn size(&self) -> u32 {
+        (self.headers().count() * SceneHeader::SIZE) as u32
+    }
+
+    fn addr(&self) -> VromAddr {
+        self.addr
+    }
+
+    fn iter_fields(&self) -> Box<dyn Iterator<Item = Box<dyn Field + '_>> + '_> {
+        Box::new(SceneFieldsIter {
+            scene: *self,
+            index: 0,
+        })
+    }
+}
+
+#[derive(Clone)]
+struct SceneFieldsIter<'a> {
+    scene: Scene<'a>,
+    index: usize,
+}
+
+impl<'a> Iterator for SceneFieldsIter<'a> {
+    type Item = Box<dyn Field + 'a>;
+
+    fn next(&mut self) -> Option<Box<dyn Field + 'a>> {
+        let header = SceneHeader::new(&self.scene.data[SceneHeader::SIZE * self.index..]);
+        if header.type_() == SceneHeaderType::END {
+            None
+        } else {
+            let field = self.clone();
+            self.index += 1;
+            Some(Box::new(field))
+        }
+    }
+}
+
+impl<'a> Field for SceneFieldsIter<'a> {
+    fn size(&self) -> u32 {
+        SceneHeader::SIZE as u32
+    }
+
+    fn addr(&self) -> VromAddr {
+        self.scene.addr + (SceneHeader::SIZE * self.index) as u32
+    }
+
+    fn name(&self) -> Cow<'static, str> {
+        Cow::Owned(format!("header[{}]", self.index))
+    }
+
+    fn try_get(&self) -> Option<reflect::Value> {
+        Some(Value::Struct(Box::new(
+            // TODO: Narrow this to specifically be a scene header
+            Sourced::new(
+                self.addr(),
+                SceneHeader::new(self.scene.data.get(SceneHeader::SIZE * self.index..)?),
+            ),
+        )))
     }
 }
 

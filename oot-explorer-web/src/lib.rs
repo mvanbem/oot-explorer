@@ -1,5 +1,6 @@
 use oot_explorer_core::fs::LazyFileSystem;
-use oot_explorer_core::header::{RoomHeader, SceneHeader};
+use oot_explorer_core::header::room::variant::RoomHeaderVariant;
+use oot_explorer_core::header::scene::variant::SceneHeaderVariant;
 use oot_explorer_core::mesh::{
     Background, ClippedMeshEntry, JfifMeshVariant, MeshVariant, SimpleMeshEntry,
 };
@@ -167,7 +168,7 @@ fn examine_scene<'a>(
     let mut start_pos = None;
     for header in scene.headers() {
         match header {
-            SceneHeader::StartPositions(header) => {
+            SceneHeaderVariant::StartPositions(header) => {
                 start_pos = header.actor_list(&ctx).iter().next().map(|actor| {
                     [
                         actor.pos_x() as f64,
@@ -178,7 +179,7 @@ fn examine_scene<'a>(
                     ]
                 });
             }
-            SceneHeader::RoomList(header) => {
+            SceneHeaderVariant::RoomList(header) => {
                 for room_list_entry in header.room_list(&ctx) {
                     let room = room_list_entry.room(scope, fs);
                     examine_room(scope, fs, scene, room, dlist_interp, backgrounds);
@@ -252,7 +253,7 @@ fn examine_room<'a>(
     };
 
     for header in room.headers() {
-        if let RoomHeader::Mesh(header) = header {
+        if let RoomHeaderVariant::Mesh(header) = header {
             match header.mesh(&cpu_ctx).variant() {
                 MeshVariant::Simple(mesh) => {
                     for entry in mesh.entries(&cpu_ctx) {

@@ -1,5 +1,6 @@
 use crate::fs::VromAddr;
-use crate::header::{self, RoomHeader};
+use crate::header::room::iter::RoomHeaderIter;
+use crate::header::room::variant::RoomHeaderVariant;
 use std::ops::Range;
 
 #[derive(Clone, Copy)]
@@ -20,7 +21,7 @@ impl<'a> Room<'a> {
     pub fn data(self) -> &'a [u8] {
         self.data
     }
-    pub fn headers(self) -> impl Iterator<Item = RoomHeader<'a>> {
-        header::Iter::new(self.data).map(|header| header.room_header())
+    pub fn headers(self) -> impl Iterator<Item = RoomHeaderVariant<'a>> {
+        RoomHeaderIter::new(self.data).map(|header| header.room_header())
     }
 }

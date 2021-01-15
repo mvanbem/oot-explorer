@@ -1,7 +1,10 @@
 use oot_explorer_core::fs::LazyFileSystem;
 use oot_explorer_core::gbi::DisplayList;
-use oot_explorer_core::header::{MeshHeader, RoomHeader, SceneHeader};
+use oot_explorer_core::header::room::variant::mesh::MeshHeader;
+use oot_explorer_core::header::room::variant::RoomHeaderVariant;
+use oot_explorer_core::header::scene::variant::SceneHeaderVariant;
 use oot_explorer_core::mesh::{Background, JfifMeshVariant, MeshVariant, SimpleMeshEntry};
+use oot_explorer_core::reflect::DebugReflect;
 use oot_explorer_core::rom::Rom;
 use oot_explorer_core::room::Room;
 use oot_explorer_core::scene::Scene;
@@ -90,9 +93,12 @@ fn examine_scene<'a>(
         ctx.set(Segment::SCENE, scene.data(), scene.vrom_range());
         ctx
     };
+
+    println!("{:#?}", DebugReflect(&scene));
+
     for header in scene.headers() {
         match header {
-            SceneHeader::RoomList(header) => {
+            SceneHeaderVariant::RoomList(header) => {
                 for (room_index, room_list_entry) in header.room_list(&ctx).iter().enumerate() {
                     examine_room(
                         &ctx,
@@ -122,7 +128,7 @@ fn examine_room<'a>(
     };
     for header in room.headers() {
         match header {
-            RoomHeader::Mesh(header) => {
+            RoomHeaderVariant::Mesh(header) => {
                 enumerate_meshes(
                     &ctx,
                     scene_index,
@@ -198,29 +204,21 @@ fn enumerate_meshes<'a, F, G>(
         MeshVariant::Simple(mesh) => {
             mesh.entries(&ctx).iter().for_each(handle_simple_mesh_entry);
         }
-        MeshVariant::Jfif(jfif) => {
-            let data = jfif.data();
-            eprintln!(
-                "{:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
-                data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
-            );
-
-            match jfif.variant() {
-                JfifMeshVariant::Single(single) => {
-                    handle_simple_mesh_entry(single.mesh_entry(ctx));
-                    g(single.background());
-                }
-                JfifMeshVariant::Multiple(multiple) => {
-                    multiple
-                        .mesh_entries(ctx)
-                        .iter()
-                        .for_each(handle_simple_mesh_entry);
-                    for entry in multiple.background_entries(ctx) {
-                        g(entry.background());
-                    }
+        MeshVariant::Jfif(jfif) => match jfif.variant() {
+            JfifMeshVariant::Single(single) => {
+                handle_simple_mesh_entry(single.mesh_entry(ctx));
+                g(single.background());
+            }
+            JfifMeshVariant::Multiple(multiple) => {
+                multiple
+                    .mesh_entries(ctx)
+                    .iter()
+                    .for_each(handle_simple_mesh_entry);
+                for entry in multiple.background_entries(ctx) {
+                    g(entry.background());
                 }
             }
-        }
+        },
         MeshVariant::Clipped(mesh) => {
             for entry in mesh.entries(ctx) {
                 match entry.opaque_display_list(ctx) {

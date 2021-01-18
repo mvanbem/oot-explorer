@@ -184,6 +184,36 @@ impl<'a> LazyFileSystem<'a> {
         (&mut self.files[index]).content.get(scope, self.rom)
     }
 
+    pub fn get_to_end_of_file(
+        &mut self,
+        scope: &'a ScopedOwner,
+        addr: VromAddr,
+    ) -> Result<&'a [u8], VirtualSliceError> {
+        let (file_index, offset) = match self.virtual_starts.binary_search(&addr) {
+            Ok(file_index) => {
+                // Exact match. The given range starts at the beginning of this file.
+                (file_index, 0)
+            }
+            Err(next_index) => {
+                // The range start is between the beginnings of files. The given range starts
+                // somewhere within the previous file.
+                let file_index = next_index - 1;
+                let file_virtual_start = self.virtual_starts[file_index];
+
+                let start_within_file = (addr - file_virtual_start) as usize;
+                (file_index, start_within_file)
+            }
+        };
+
+        let file = self.get_file(scope, file_index);
+        file.get(offset..)
+            .ok_or_else(move || VirtualSliceError::OutOfRange {
+                file_index,
+                len: file.len(),
+                range: offset..file.len(),
+            })
+    }
+
     pub fn get_virtual_slice(
         &mut self,
         scope: &'a ScopedOwner,

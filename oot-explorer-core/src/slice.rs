@@ -16,6 +16,7 @@ where
     len: usize,
     phantom_t_: std::marker::PhantomData<&'a [T]>,
 }
+
 impl<'a, T> Debug for Slice<'a, T>
 where
     T: StructReader<'a>,
@@ -27,6 +28,7 @@ where
             .finish()
     }
 }
+
 impl<'a, T> Slice<'a, T>
 where
     T: StructReader<'a>,
@@ -38,14 +40,17 @@ where
             phantom_t_: std::marker::PhantomData,
         }
     }
+
     pub fn len(self) -> usize {
         self.len
     }
+
     pub fn get(self, index: usize) -> T {
         <T as StructReader>::new(
             &self.data[index * <T as StructReader>::SIZE..(index + 1) * <T as StructReader>::SIZE],
         )
     }
+
     pub fn iter(self) -> Iter<'a, T> {
         Iter {
             data: self.data,
@@ -54,6 +59,7 @@ where
         }
     }
 }
+
 impl<'a, T> IntoIterator for Slice<'a, T>
 where
     T: StructReader<'a>,
@@ -73,11 +79,13 @@ where
     len: usize,
     phantom_t_: std::marker::PhantomData<T>,
 }
+
 impl<'a, T> Iterator for Iter<'a, T>
 where
     T: StructReader<'a>,
 {
     type Item = T;
+
     fn next(&mut self) -> Option<T> {
         if self.len > 0 {
             let item = <T as StructReader>::new(self.data);

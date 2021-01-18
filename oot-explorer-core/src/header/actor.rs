@@ -1,7 +1,58 @@
 use byteorder::{BigEndian, ReadBytesExt};
 use std::fmt::{self, Debug, Formatter};
 
+use crate::reflect::primitive::PrimitiveType;
+use crate::reflect::struct_::{FieldDescriptor, StructDescriptor, StructFieldLocation};
+use crate::reflect::type_::TypeDescriptor;
 use crate::slice::StructReader;
+
+pub const ACTOR_DESC: TypeDescriptor = TypeDescriptor::Struct(&StructDescriptor {
+    name: "Actor",
+    size: Some(0x10),
+    is_end: None,
+    fields: &[
+        FieldDescriptor {
+            name: "actor_number",
+            location: StructFieldLocation::Simple { offset: 0 },
+            desc: TypeDescriptor::Primitive(PrimitiveType::U16),
+        },
+        FieldDescriptor {
+            name: "pos_x",
+            location: StructFieldLocation::Simple { offset: 2 },
+            desc: TypeDescriptor::Primitive(PrimitiveType::I16),
+        },
+        FieldDescriptor {
+            name: "pos_y",
+            location: StructFieldLocation::Simple { offset: 4 },
+            desc: TypeDescriptor::Primitive(PrimitiveType::I16),
+        },
+        FieldDescriptor {
+            name: "pos_z",
+            location: StructFieldLocation::Simple { offset: 6 },
+            desc: TypeDescriptor::Primitive(PrimitiveType::I16),
+        },
+        FieldDescriptor {
+            name: "angle_x",
+            location: StructFieldLocation::Simple { offset: 8 },
+            desc: TypeDescriptor::Primitive(PrimitiveType::I16),
+        },
+        FieldDescriptor {
+            name: "angle_y",
+            location: StructFieldLocation::Simple { offset: 0xa },
+            desc: TypeDescriptor::Primitive(PrimitiveType::I16),
+        },
+        FieldDescriptor {
+            name: "angle_z",
+            location: StructFieldLocation::Simple { offset: 0xc },
+            desc: TypeDescriptor::Primitive(PrimitiveType::I16),
+        },
+        FieldDescriptor {
+            name: "init",
+            location: StructFieldLocation::Simple { offset: 0xe },
+            desc: TypeDescriptor::Primitive(PrimitiveType::U16),
+        },
+    ],
+});
 
 #[derive(Clone, Copy)]
 pub struct Actor<'a> {

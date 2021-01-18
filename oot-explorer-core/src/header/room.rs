@@ -30,7 +30,7 @@ impl<'a> RoomHeader<'a> {
         RoomHeaderType(self.data[0])
     }
 
-    pub fn room_header(self) -> RoomHeaderVariant<'a> {
+    pub fn variant(self) -> RoomHeaderVariant<'a> {
         let data = self.data;
         match self.type_() {
             RoomHeaderType::ACTOR_LIST => RoomHeaderVariant::ActorList(ActorListHeader::new(data)),

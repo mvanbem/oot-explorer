@@ -4,7 +4,6 @@ use oot_explorer_core::header::room::variant::mesh::MeshHeader;
 use oot_explorer_core::header::room::variant::RoomHeaderVariant;
 use oot_explorer_core::header::scene::variant::SceneHeaderVariant;
 use oot_explorer_core::mesh::{Background, JfifMeshVariant, MeshVariant, SimpleMeshEntry};
-use oot_explorer_core::reflect::DebugReflect;
 use oot_explorer_core::rom::Rom;
 use oot_explorer_core::room::Room;
 use oot_explorer_core::scene::Scene;
@@ -94,7 +93,16 @@ fn examine_scene<'a>(
         ctx
     };
 
-    println!("{:#?}", DebugReflect(&scene));
+    // oot_explorer_core::reflect::dump_struct(scope, fs, &ctx, 0, &scene);
+    oot_explorer_core::reflect::dump(
+        scope,
+        fs,
+        &ctx,
+        0,
+        oot_explorer_core::scene::SCENE_DESC,
+        scene.addr(),
+    );
+    println!();
 
     for header in scene.headers() {
         match header {

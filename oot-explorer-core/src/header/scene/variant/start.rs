@@ -1,22 +1,26 @@
 use byteorder::{BigEndian, ReadBytesExt};
-use std::fmt::{self, Debug, Formatter};
 
-use crate::header::actor::Actor;
+use crate::header::actor::{Actor, ACTOR_DESC};
+use crate::reflect::primitive::PrimitiveType;
+use crate::reflect::struct_::{FieldDescriptor, StructFieldLocation, VariantDescriptor};
 use crate::segment::{SegmentAddr, SegmentCtx};
 use crate::slice::Slice;
+
+pub const START_POSITIONS_DESC: &VariantDescriptor = &VariantDescriptor {
+    fields: &[FieldDescriptor {
+        name: "start_positions",
+        location: StructFieldLocation::Slice {
+            count_offset: 1,
+            count_desc: PrimitiveType::U8,
+            ptr_offset: 4,
+        },
+        desc: ACTOR_DESC,
+    }],
+};
 
 #[derive(Clone, Copy)]
 pub struct StartPositionsHeader<'a> {
     data: &'a [u8],
-}
-
-impl<'a> Debug for StartPositionsHeader<'a> {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        f.debug_struct("StartPositionsHeader")
-            .field("count", &self.count())
-            .field("ptr", &self.ptr())
-            .finish()
-    }
 }
 
 impl<'a> StartPositionsHeader<'a> {

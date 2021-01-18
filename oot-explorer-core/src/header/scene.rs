@@ -1,8 +1,9 @@
-use std::borrow::Cow;
+use scoped_owner::ScopedOwner;
+use thiserror::Error;
 
-use crate::fs::VromAddr;
+use crate::fs::{LazyFileSystem, VirtualSliceError, VromAddr};
 use crate::header::alternate::AlternateHeadersHeader;
-use crate::header::scene::type_::SceneHeaderType;
+use crate::header::scene::type_::{SceneHeaderType, SCENE_HEADER_TYPE_DESC};
 use crate::header::scene::variant::camera::CameraAndWorldMapHeader;
 use crate::header::scene::variant::collision::CollisionHeader;
 use crate::header::scene::variant::entrance::EntranceListHeader;
@@ -13,14 +14,38 @@ use crate::header::scene::variant::room::RoomListHeader;
 use crate::header::scene::variant::skybox::SceneSkyboxHeader;
 use crate::header::scene::variant::sound::SceneSoundHeader;
 use crate::header::scene::variant::special::SpecialObjectsHeader;
-use crate::header::scene::variant::start::StartPositionsHeader;
+use crate::header::scene::variant::start::{StartPositionsHeader, START_POSITIONS_DESC};
 use crate::header::scene::variant::transition::TransitionActorsHeader;
 use crate::header::scene::variant::SceneHeaderVariant;
-use crate::reflect::{Field, Reflect, Sourced, Value};
+use crate::reflect::struct_::UnionDescriptor;
+use crate::reflect::type_::TypeDescriptor;
 
 pub mod iter;
 pub mod type_;
 pub mod variant;
+
+const SCENE_HEADER_INNER_DESC: &UnionDescriptor = &UnionDescriptor {
+    name: "SceneHeader",
+    size: Some(SceneHeader::SIZE as u32),
+    is_end: Some(scene_header_is_end),
+    discriminant_offset: 0,
+    discriminant_desc: SCENE_HEADER_TYPE_DESC,
+    variants: &[/* 0x00 */ Some(START_POSITIONS_DESC)],
+};
+
+pub const SCENE_HEADER_DESC: TypeDescriptor = TypeDescriptor::Union(SCENE_HEADER_INNER_DESC);
+
+fn scene_header_is_end<'scope>(
+    scope: &'scope ScopedOwner,
+    fs: &mut LazyFileSystem<'scope>,
+    addr: VromAddr,
+) -> bool {
+    let data = match fs.get_virtual_slice(scope, addr..addr + SceneHeader::SIZE as u32) {
+        Ok(data) => data,
+        Err(VirtualSliceError::OutOfRange { .. }) => return true,
+    };
+    SceneHeader::new(data).type_() == SceneHeaderType::END
+}
 
 #[derive(Clone, Copy)]
 pub struct SceneHeader<'a> {
@@ -38,9 +63,9 @@ impl<'a> SceneHeader<'a> {
         SceneHeaderType(self.data[0])
     }
 
-    pub fn scene_header(self) -> SceneHeaderVariant<'a> {
+    pub fn variant(self) -> Result<SceneHeaderVariant<'a>, SceneHeaderVariantError> {
         let data = self.data;
-        match self.type_() {
+        Ok(match self.type_() {
             SceneHeaderType::START_POSITIONS => {
                 SceneHeaderVariant::StartPositions(StartPositionsHeader::new(data))
             }
@@ -67,79 +92,13 @@ impl<'a> SceneHeader<'a> {
             SceneHeaderType::CAMERA_AND_WORLD_MAP => {
                 SceneHeaderVariant::CameraAndWorldMap(CameraAndWorldMapHeader::new(data))
             }
-            type_ => panic!("unexpected scene header type: 0x{:02x}", type_.0),
-        }
-    }
-}
-
-impl<'a> Reflect for Sourced<SceneHeader<'a>> {
-    fn name(&self) -> Cow<'static, str> {
-        Cow::Borrowed("Header")
-    }
-
-    fn size(&self) -> u32 {
-        SceneHeader::SIZE as u32
-    }
-
-    fn addr(&self) -> VromAddr {
-        Sourced::addr(self)
-    }
-
-    fn iter_fields(&self) -> Box<dyn Iterator<Item = Box<dyn Field + '_>> + '_> {
-        Box::new(HeaderFieldsIter {
-            header: self.clone(),
-            index: 0,
+            type_ => return Err(SceneHeaderVariantError::Unknown(type_)),
         })
     }
 }
 
-#[derive(Clone)]
-struct HeaderFieldsIter<'a> {
-    header: Sourced<SceneHeader<'a>>,
-    index: usize,
-}
-
-impl<'a> Iterator for HeaderFieldsIter<'a> {
-    type Item = Box<dyn Field + 'a>;
-
-    fn next(&mut self) -> Option<Box<dyn Field + 'a>> {
-        if self.index < 1 {
-            let field = self.clone();
-            self.index += 1;
-            Some(Box::new(field))
-        } else {
-            None
-        }
-    }
-}
-
-impl<'a> Field for HeaderFieldsIter<'a> {
-    fn size(&self) -> u32 {
-        match self.index {
-            0 => 1,
-            _ => unreachable!(),
-        }
-    }
-
-    fn addr(&self) -> VromAddr {
-        match self.index {
-            0 => self.header.addr(),
-            _ => unreachable!(),
-        }
-    }
-
-    fn name(&self) -> Cow<'static, str> {
-        match self.index {
-            0 => Cow::Borrowed("code"),
-            _ => unreachable!(),
-        }
-    }
-
-    fn try_get(&self) -> Option<Value> {
-        match self.index {
-            // TODO: Enum types!
-            0 => Some(Value::U8(self.header.type_().0)),
-            _ => unreachable!(),
-        }
-    }
+#[derive(Debug, Error)]
+pub enum SceneHeaderVariantError {
+    #[error("unknown scene header type: 0x{:02x}", (.0).0)]
+    Unknown(SceneHeaderType),
 }

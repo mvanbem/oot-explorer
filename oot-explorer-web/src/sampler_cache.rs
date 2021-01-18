@@ -12,7 +12,7 @@ pub fn opaque_key(params: &TextureParams) -> u32 {
     ((hash >> 32) ^ hash) as u32
 }
 
-fn create_gl_sampler(gl: &WebGl2RenderingContext, params: &TextureParams) -> WebGlSampler {
+fn create_gl_sampler(gl: &WebGl2RenderingContext, _params: &TextureParams) -> WebGlSampler {
     let sampler = gl.create_sampler().unwrap();
     gl.sampler_parameteri(&sampler, Gl::TEXTURE_MAG_FILTER, Gl::NEAREST as i32);
     gl.sampler_parameteri(&sampler, Gl::TEXTURE_MIN_FILTER, Gl::NEAREST as i32);

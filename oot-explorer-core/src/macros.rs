@@ -1,64 +1,53 @@
 macro_rules! compile_interfaces {
-    ($($args:tt)*) => {
-        __impl_compile_interfaces! {
-            state: Init { size: (absent) }
-            $($args)*
-        }
-    };
-}
+    // Parse the end of input.
+    (@parse: Init $ignored_state:tt) => {};
 
-macro_rules! __impl_compile_interfaces {
-    // End of input.
+    // Parse a size attribute.
     (
-        state: Init $ignored_state:tt
-    ) => {};
-
-    // An attribute.
-    (
-        state: Init { size: $size:tt }
-        #[size($new_size:literal)]
+        @parse: Init { size: $ignored_size:tt }
+        #[size($size:literal)]
         $($tail:tt)*
     ) => {
-        __impl_compile_interfaces! {
+        compile_interfaces! {
             // Record the newly defined size.
-            state: Init { size: (present $new_size) }
+            @parse: Init { size: (present $size) }
             $($tail)*
         }
     };
 
-    // Start of struct.
+    // Parse the start of a struct.
     (
-        state: Init { size: $size:tt }
+        @parse: Init { size: $size:tt }
         struct $name:ident {
             $($struct_tail:tt)*
         }
         $($tail:tt)*
     ) => {
-        __impl_compile_interfaces! {
-            // We are now in struct state.
-            state: Struct { name: $name size: $size fields: [] }
+        compile_interfaces! {
+            // We are now parsing a struct.
+            @parse: Struct { name: $name size: $size fields: [] }
             { $($struct_tail)* }
             $($tail)*
         }
     };
 
-    // Struct field declaration.
+    // Parse a struct field declaration.
     (
-        state: Struct { name: $name:ident size: $size:tt fields: [$($field:tt)*] }
+        @parse: Struct { name: $name:ident size: $size:tt fields: [$($field:tt)*] }
         {
-            $new_field_type:ident $new_field_name:ident @ $new_field_offset:literal;
+            $field_type:ident $field_name:ident @ $field_offset:literal;
             $($struct_tail:tt)*
         }
         $($tail:tt)*
     ) => {
-        __impl_compile_interfaces! {
-            state: Struct {
+        compile_interfaces! {
+            @parse: Struct {
                 name: $name
                 size: $size
                 fields: [
                     $($field)*
                     // New field.
-                    { name: $new_field_name offset: $new_field_offset type: $new_field_type }
+                    { name: $field_name offset: $field_offset type: $field_type }
                 ]
             }
             { $($struct_tail)* }
@@ -66,18 +55,12 @@ macro_rules! __impl_compile_interfaces {
         }
     };
 
-    // End of struct.
+    // Parse the end of a struct.
     (
-        state: Struct {
+        @parse: Struct {
             name: $name:ident
             size: $size:tt
-            fields: [
-                $({
-                    name: $field_name:ident
-                    offset: $field_offset:literal
-                    type: $field_type:ident
-                })*
-            ]
+            fields: [$($field:tt)*]
         }
         { /* empty */ }
         $($tail:tt)*
@@ -88,10 +71,10 @@ macro_rules! __impl_compile_interfaces {
                 crate::reflect::type_::TypeDescriptor::Struct(
                     &crate::reflect::struct_::StructDescriptor {
                         name: "",
-                        size: __impl_reflect_size_field!($size),
+                        size: compile_interfaces!(@option_to_rust $size),
                         is_end: None,
                         fields: &[$(
-                            __impl_reflect_field!($field_type $field_name $field_offset),
+                            compile_interfaces!(@emit_field_descriptor $field),
                         )*],
                     },
                 );
@@ -114,31 +97,21 @@ macro_rules! __impl_compile_interfaces {
             }
 
             $(
-                __impl_reader_field!($field_type $field_name $field_offset);
+                compile_interfaces!(@emit_field_accessor $field);
             )*
         }
 
-        __impl_struct_reader!($name $size);
+        compile_interfaces!(@emit_struct_reader_impl $name $size);
 
-        __impl_compile_interfaces! {
+        compile_interfaces! {
             // We are back in the initial state.
-            state: Init { size: (absent) }
+            @parse: Init { size: (absent) }
             $($tail)*
         }
     };
-}
 
-macro_rules! __impl_reflect_size_field {
-    ((absent)) => {
-        None
-    };
-    ((present $size:literal)) => {
-        Some($size)
-    };
-}
-
-macro_rules! __impl_reflect_field {
-    (u16 $name:ident $offset:literal) => {
+    // Emit a Rust `FieldDescriptor` literal.
+    (@emit_field_descriptor { name: $name:ident offset: $offset:literal type: u16 }) => {
         crate::reflect::struct_::FieldDescriptor {
             name: stringify!($name),
             location: crate::reflect::struct_::StructFieldLocation::Simple { offset: $offset },
@@ -147,7 +120,7 @@ macro_rules! __impl_reflect_field {
             ),
         }
     };
-    (i16 $name:ident $offset:literal) => {
+    (@emit_field_descriptor { name: $name:ident offset: $offset:literal type: i16 }) => {
         crate::reflect::struct_::FieldDescriptor {
             name: stringify!($name),
             location: crate::reflect::struct_::StructFieldLocation::Simple { offset: $offset },
@@ -156,10 +129,9 @@ macro_rules! __impl_reflect_field {
             ),
         }
     };
-}
 
-macro_rules! __impl_reader_field {
-    (u16 $name:ident $offset:literal) => {
+    // Emit a Rust method to access a field.
+    (@emit_field_accessor { name: $name:ident offset: $offset:literal type: u16 }) => {
         pub fn $name(self) -> u16 {
             ::byteorder::ReadBytesExt::read_u16::<::byteorder::BigEndian>(
                 &mut &self.data[$offset..$offset + 2],
@@ -167,7 +139,7 @@ macro_rules! __impl_reader_field {
             .unwrap()
         }
     };
-    (i16 $name:ident $offset:literal) => {
+    (@emit_field_accessor { name: $name:ident offset: $offset:literal type: i16 }) => {
         pub fn $name(self) -> i16 {
             ::byteorder::ReadBytesExt::read_i16::<::byteorder::BigEndian>(
                 &mut &self.data[$offset..$offset + 2],
@@ -175,17 +147,34 @@ macro_rules! __impl_reader_field {
             .unwrap()
         }
     };
-}
 
-macro_rules! __impl_struct_reader {
-    ($name:ident (absent)) => {};
-    ($name:ident (present $size:literal)) => {
+    // Emit a Rust impl for the StructReader trait.
+    (@emit_struct_reader_impl $name:ident (absent)) => {};
+    (@emit_struct_reader_impl $name:ident (present $size:literal)) => {
         impl<'scope> crate::slice::StructReader<'scope> for $name<'scope> {
             const SIZE: usize = $size;
 
             fn new(data: &'scope [u8]) -> Self {
                 Self { data }
             }
+        }
+    };
+
+    // Rust-style `Some(value)` is two tt tokens, while `None` is only one tt token. To keep things
+    // easy to parse, this macro uses `(present value)`/`(absent)` instead. These two expressions
+    // convert the present/absent form to a Rust option literal.
+    (@option_to_rust (absent)) => {
+        None
+    };
+    (@option_to_rust (present $size:literal)) => {
+        Some($size)
+    };
+
+    // Catch-all for the initial invocation.
+    ($($args:tt)*) => {
+        compile_interfaces! {
+            @parse: Init { size: (absent) }
+            $($args)*
         }
     };
 }

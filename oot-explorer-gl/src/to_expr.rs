@@ -106,7 +106,7 @@ mod to_expr_tests {
         .to_expr(&mut ctx, Cycle::Cycle2);
         assert_eq!(
             format!("{:?}", ctx.get_with_ctx(expr).unwrap()),
-            "(cycle1.rgb - texel0.rgb) * texel1.rgb + v_color.rgb"
+            "(combined.rgb - texel0.rgb) * texel1.rgb + prim.rgb"
         );
     }
 
@@ -122,7 +122,7 @@ mod to_expr_tests {
         .to_expr(&mut ctx, Cycle::Cycle2);
         assert_eq!(
             format!("{:?}", ctx.get_with_ctx(expr).unwrap()),
-            "-texel0.rgb * texel1.rgb + v_color.rgb"
+            "-texel0.rgb * texel1.rgb + prim.rgb"
         );
     }
 
@@ -138,7 +138,7 @@ mod to_expr_tests {
         .to_expr(&mut ctx, Cycle::Cycle2);
         assert_eq!(
             format!("{:?}", ctx.get_with_ctx(expr).unwrap()),
-            "cycle1.rgb * texel1.rgb + v_color.rgb"
+            "combined.rgb * texel1.rgb + prim.rgb"
         );
     }
 
@@ -152,10 +152,7 @@ mod to_expr_tests {
             ColorInput::Primitive,
         )
         .to_expr(&mut ctx, Cycle::Cycle2);
-        assert_eq!(
-            format!("{:?}", ctx.get_with_ctx(expr).unwrap()),
-            "v_color.rgb"
-        );
+        assert_eq!(format!("{:?}", ctx.get_with_ctx(expr).unwrap()), "prim.rgb");
     }
 
     #[test]
@@ -170,7 +167,7 @@ mod to_expr_tests {
         .to_expr(&mut ctx, Cycle::Cycle2);
         assert_eq!(
             format!("{:?}", ctx.get_with_ctx(expr).unwrap()),
-            "cycle1.rgb - texel0.rgb + v_color.rgb"
+            "combined.rgb - texel0.rgb + prim.rgb"
         );
     }
 
@@ -186,7 +183,7 @@ mod to_expr_tests {
         .to_expr(&mut ctx, Cycle::Cycle2);
         assert_eq!(
             format!("{:?}", ctx.get_with_ctx(expr).unwrap()),
-            "(cycle1.rgb - texel0.rgb) * texel1.rgb"
+            "(combined.rgb - texel0.rgb) * texel1.rgb"
         );
     }
 }

@@ -1,54 +1,42 @@
-macro_rules! gen_types {
+macro_rules! compile_interfaces {
     ($($args:tt)*) => {
-        __impl_gen_types! {
-            state: Init {
-                size: false 0,
-            },
+        __impl_compile_interfaces! {
+            state: Init { size: (absent) }
             $($args)*
         }
     };
 }
 
-macro_rules! __impl_gen_types {
+macro_rules! __impl_compile_interfaces {
     // End of input.
     (
-        state: Init {$($ignored_state:tt)*},
+        state: Init $ignored_state:tt
     ) => {};
 
     // An attribute.
     (
-        state: Init {
-            size: $size_is_some:ident $size:literal,
-        },
+        state: Init { size: $size:tt }
         #[size($new_size:literal)]
         $($tail:tt)*
     ) => {
-        __impl_gen_types! {
-            state: Init {
-                // Record the newly defined size.
-                size: true $size,
-            },
+        __impl_compile_interfaces! {
+            // Record the newly defined size.
+            state: Init { size: (present $new_size) }
             $($tail)*
         }
     };
 
     // Start of struct.
     (
-        state: Init {
-            size: $size_is_some:ident $size:literal,
-        },
+        state: Init { size: $size:tt }
         struct $name:ident {
             $($struct_tail:tt)*
         }
         $($tail:tt)*
     ) => {
-        __impl_gen_types! {
+        __impl_compile_interfaces! {
             // We are now in struct state.
-            state: Struct {
-                name: $name,
-                size: $size_is_some $size,
-                fields: [],
-            },
+            state: Struct { name: $name size: $size fields: [] }
             { $($struct_tail)* }
             $($tail)*
         }
@@ -56,41 +44,23 @@ macro_rules! __impl_gen_types {
 
     // Struct field declaration.
     (
-        state: Struct {
-            name: $name:ident,
-            size: $size_is_some:ident $size:literal,
-            fields: [
-                $({
-                    name: $field_name:ident,
-                    offset: $field_offset:literal,
-                    type: $field_type:ident,
-                },)*
-            ],
-        },
+        state: Struct { name: $name:ident size: $size:tt fields: [$($field:tt)*] }
         {
             $new_field_type:ident $new_field_name:ident @ $new_field_offset:literal;
             $($struct_tail:tt)*
         }
         $($tail:tt)*
     ) => {
-        __impl_gen_types! {
+        __impl_compile_interfaces! {
             state: Struct {
-                name: $name,
-                size: $size_is_some $size,
+                name: $name
+                size: $size
                 fields: [
-                    $({
-                        name: $field_name,
-                        offset: $field_offset,
-                        type: $field_type,
-                    },)*
+                    $($field)*
                     // New field.
-                    {
-                        name: $new_field_name,
-                        offset: $new_field_offset,
-                        type: $new_field_type,
-                    },
-                ],
-            },
+                    { name: $new_field_name offset: $new_field_offset type: $new_field_type }
+                ]
+            }
             { $($struct_tail)* }
             $($tail)*
         }
@@ -99,16 +69,16 @@ macro_rules! __impl_gen_types {
     // End of struct.
     (
         state: Struct {
-            name: $name:ident,
-            size: $size_is_some:ident $size:literal,
+            name: $name:ident
+            size: $size:tt
             fields: [
                 $({
-                    name: $field_name:ident,
-                    offset: $field_offset:literal,
-                    type: $field_type:ident,
-                },)*
-            ],
-        },
+                    name: $field_name:ident
+                    offset: $field_offset:literal
+                    type: $field_type:ident
+                })*
+            ]
+        }
         { /* empty */ }
         $($tail:tt)*
     ) => {
@@ -118,7 +88,7 @@ macro_rules! __impl_gen_types {
                 crate::reflect::type_::TypeDescriptor::Struct(
                     &crate::reflect::struct_::StructDescriptor {
                         name: "",
-                        size: __impl_reflect_size_field!($size_is_some $size),
+                        size: __impl_reflect_size_field!($size),
                         is_end: None,
                         fields: &[$(
                             __impl_reflect_field!($field_type $field_name $field_offset),
@@ -148,23 +118,21 @@ macro_rules! __impl_gen_types {
             )*
         }
 
-        __impl_struct_reader!($name $size_is_some $size);
+        __impl_struct_reader!($name $size);
 
-        __impl_gen_types! {
+        __impl_compile_interfaces! {
             // We are back in the initial state.
-            state: Init {
-                size: false 0,
-            },
+            state: Init { size: (absent) }
             $($tail)*
         }
     };
 }
 
 macro_rules! __impl_reflect_size_field {
-    (false $size:literal) => {
+    ((absent)) => {
         None
     };
-    (true $size:literal) => {
+    ((present $size:literal)) => {
         Some($size)
     };
 }
@@ -210,8 +178,8 @@ macro_rules! __impl_reader_field {
 }
 
 macro_rules! __impl_struct_reader {
-    ($name:ident false $size:literal) => {};
-    ($name:ident true $size:literal) => {
+    ($name:ident (absent)) => {};
+    ($name:ident (present $size:literal)) => {
         impl<'scope> crate::slice::StructReader<'scope> for $name<'scope> {
             const SIZE: usize = $size;
 

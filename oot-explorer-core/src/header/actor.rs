@@ -1,4 +1,4 @@
-gen_types! {
+compile_interfaces! {
     #[size(0x10)]
     struct Actor {
         u16 actor_number @ 0;

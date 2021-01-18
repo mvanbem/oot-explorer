@@ -228,6 +228,7 @@ dependencies = [
  "byteorder",
  "derive_more",
  "num-traits",
+ "paste",
  "scoped-owner",
  "thiserror",
 ]
@@ -282,6 +283,12 @@ dependencies = [
  "wasm-bindgen",
  "web-sys",
 ]
+
+[[package]]
+name = "paste"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c5d65c4d95931acda4498f675e332fcbdc9a06705cd07086c510e9b6009cd1c1"
 
 [[package]]
 name = "png"

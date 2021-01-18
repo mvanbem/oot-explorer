@@ -1,3 +1,6 @@
+#[macro_use]
+mod macros;
+
 pub mod collision;
 pub mod fs;
 pub mod gbi;

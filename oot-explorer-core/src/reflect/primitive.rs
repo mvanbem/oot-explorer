@@ -2,6 +2,7 @@ use byteorder::{BigEndian, ReadBytesExt};
 use scoped_owner::ScopedOwner;
 
 use crate::fs::{LazyFileSystem, VirtualSliceError, VromAddr};
+use crate::segment::SegmentAddr;
 
 use super::type_::TypeDescriptor;
 
@@ -22,6 +23,7 @@ pub enum PrimitiveType {
     I16,
     U32,
     I32,
+    VoidPtr,
 }
 
 impl PrimitiveType {
@@ -34,6 +36,7 @@ impl PrimitiveType {
             PrimitiveType::I16 => "i16",
             PrimitiveType::U32 => "u32",
             PrimitiveType::I32 => "i32",
+            PrimitiveType::VoidPtr => "void*",
         }
     }
 
@@ -51,7 +54,9 @@ impl PrimitiveType {
             PrimitiveType::I8 => fetch(1)?[0] as i8 as u32,
             PrimitiveType::U16 => fetch(2)?.read_u16::<BigEndian>().unwrap() as u32,
             PrimitiveType::I16 => fetch(2)?.read_i16::<BigEndian>().unwrap() as u32,
-            PrimitiveType::U32 => fetch(4)?.read_u32::<BigEndian>().unwrap(),
+            PrimitiveType::U32 | PrimitiveType::VoidPtr => {
+                fetch(4)?.read_u32::<BigEndian>().unwrap()
+            }
             PrimitiveType::I32 => fetch(4)?.read_i32::<BigEndian>().unwrap() as u32,
         })
     }
@@ -81,6 +86,12 @@ pub(super) fn dump_primitive<'scope>(
             }
             PrimitiveType::I32 => {
                 print!("{}", fetch(4)?.read_i32::<BigEndian>().unwrap())
+            }
+            PrimitiveType::VoidPtr => {
+                print!(
+                    "{:?}",
+                    SegmentAddr(fetch(4)?.read_u32::<BigEndian>().unwrap())
+                )
             }
         }
         Ok(())

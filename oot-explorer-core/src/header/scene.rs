@@ -1,3 +1,4 @@
+use crate::collision::{Collision, COLLISION_PTR_DESC};
 use crate::delimited::{is_end, Delimited};
 use crate::header::actor::{Actor, ACTOR_DESC};
 use crate::header::scene::camera::{Camera, CAMERA_DESC};
@@ -39,8 +40,7 @@ compile_interfaces! {
     }
 
     struct CollisionHeader {
-        // TODO: Type this as Collision*.
-        u32 ptr @4;
+        struct Collision* ptr @4;
     }
 
     struct RoomListHeader {

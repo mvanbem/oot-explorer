@@ -3,6 +3,7 @@ use scoped_owner::ScopedOwner;
 use crate::fs::{LazyFileSystem, VromAddr};
 use crate::reflect::bitfield::dump_bitfield;
 use crate::reflect::enum_::dump_enum;
+use crate::reflect::pointer::dump_pointer;
 use crate::reflect::primitive::dump_primitive;
 use crate::reflect::struct_::{dump_struct, dump_union};
 use crate::reflect::type_::TypeDescriptor;
@@ -11,6 +12,7 @@ use crate::segment::SegmentCtx;
 pub mod bitfield;
 pub mod enum_;
 pub mod instantiate;
+pub mod pointer;
 pub mod primitive;
 pub mod sized;
 pub mod sourced;
@@ -35,5 +37,8 @@ pub fn dump<'scope>(
         TypeDescriptor::Enum(desc) => dump_enum(scope, fs, desc, addr),
         TypeDescriptor::Bitfield(desc) => dump_bitfield(scope, fs, desc, addr),
         TypeDescriptor::Primitive(desc) => dump_primitive(scope, fs, desc, addr),
+        TypeDescriptor::Pointer(desc) => {
+            dump_pointer(scope, fs, segment_ctx, indent_level, desc, addr)
+        }
     }
 }

@@ -3,6 +3,7 @@ use scoped_owner::ScopedOwner;
 use crate::fs::{LazyFileSystem, VromAddr};
 use crate::reflect::bitfield::BitfieldDescriptor;
 use crate::reflect::enum_::EnumDescriptor;
+use crate::reflect::pointer::PointerDescriptor;
 use crate::reflect::primitive::PrimitiveType;
 use crate::reflect::struct_::{IsEndFn, StructDescriptor, UnionDescriptor};
 
@@ -13,6 +14,7 @@ pub enum TypeDescriptor {
     Enum(&'static EnumDescriptor),
     Bitfield(&'static BitfieldDescriptor),
     Primitive(PrimitiveType),
+    Pointer(&'static PointerDescriptor),
 }
 
 impl TypeDescriptor {
@@ -23,6 +25,7 @@ impl TypeDescriptor {
             TypeDescriptor::Enum(desc) => desc.name,
             TypeDescriptor::Bitfield(desc) => desc.name,
             TypeDescriptor::Primitive(desc) => desc.name(),
+            TypeDescriptor::Pointer(desc) => desc.name,
         }
     }
 
@@ -33,6 +36,7 @@ impl TypeDescriptor {
             TypeDescriptor::Enum(_) => None,
             TypeDescriptor::Bitfield(_) => None,
             TypeDescriptor::Primitive(_) => None,
+            TypeDescriptor::Pointer(_) => Some(4),
         }
     }
 
@@ -43,6 +47,7 @@ impl TypeDescriptor {
             TypeDescriptor::Enum(_) => None,
             TypeDescriptor::Bitfield(_) => None,
             TypeDescriptor::Primitive(_) => None,
+            TypeDescriptor::Pointer(_) => None,
         }
     }
 
@@ -58,6 +63,7 @@ impl TypeDescriptor {
             TypeDescriptor::Enum(desc) => desc.read_as_u32(scope, fs, addr).ok(),
             TypeDescriptor::Bitfield(_) => None,
             TypeDescriptor::Primitive(desc) => desc.read_as_u32(scope, fs, addr).ok(),
+            TypeDescriptor::Pointer(_) => None,
         }
     }
 }

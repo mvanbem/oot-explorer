@@ -1,12 +1,18 @@
 use crate::fs::VromAddr;
+use crate::reflect::instantiate::Instantiate;
+use crate::reflect::primitive::PrimitiveType;
+use crate::reflect::type_::TypeDescriptor;
 use std::collections::HashMap;
 use std::fmt::{self, Debug, Formatter};
 use std::ops::{Add, Range, Sub};
 use thiserror::Error;
 
+pub const SEGMENT_ADDR_DESC: TypeDescriptor = TypeDescriptor::Primitive(PrimitiveType::VoidPtr);
+
 /// A segmented address.
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
 pub struct SegmentAddr(pub u32);
+
 impl Debug for SegmentAddr {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let (segment, offset) = (self.segment(), self.offset());
@@ -20,32 +26,45 @@ impl Debug for SegmentAddr {
         }
     }
 }
+
 impl SegmentAddr {
     pub fn segment(self) -> Segment {
         Segment((self.0 >> 24) as u8)
     }
+
     pub fn offset(self) -> u32 {
         self.0 & 0x00ff_ffff
     }
 }
+
 impl Add<u32> for SegmentAddr {
     type Output = SegmentAddr;
+
     fn add(self, rhs: u32) -> SegmentAddr {
         let result = SegmentAddr(self.0 + rhs);
         assert_eq!(result.segment(), self.segment());
         result
     }
 }
+
 impl Sub for SegmentAddr {
     type Output = u32;
+
     fn sub(self, rhs: SegmentAddr) -> u32 {
         assert_eq!(self.segment(), rhs.segment());
         self.0 - rhs.0
     }
 }
 
+impl<'scope> Instantiate<'scope> for SegmentAddr {
+    fn new(data: &'scope [u8]) -> Self {
+        SegmentAddr(<u32 as Instantiate>::new(data))
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Segment(pub u8);
+
 impl Segment {
     pub const SCENE: Segment = Segment(0x02);
     pub const ROOM: Segment = Segment(0x03);
@@ -58,18 +77,22 @@ impl Segment {
 pub struct SegmentCtx<'a> {
     mappings: HashMap<Segment, (&'a [u8], Range<VromAddr>)>,
 }
+
 impl<'a> SegmentCtx<'a> {
     pub fn new() -> Self {
         Self {
             mappings: HashMap::new(),
         }
     }
+
     pub fn set(&mut self, segment: Segment, data: &'a [u8], vrom: Range<VromAddr>) {
         self.mappings.insert(segment, (data, vrom));
     }
+
     pub fn get_data(&self, segment: Segment) -> Option<&'a [u8]> {
         self.mappings.get(&segment).map(|tuple| tuple.0)
     }
+
     pub fn get_vrom(&self, segment: Segment) -> Option<Range<VromAddr>> {
         self.mappings.get(&segment).map(|tuple| tuple.1.clone())
     }
@@ -82,6 +105,7 @@ impl<'a> SegmentCtx<'a> {
             segment: addr.segment(),
         })
     }
+
     pub fn resolve_range(
         &self,
         range: Range<SegmentAddr>,
@@ -92,6 +116,7 @@ impl<'a> SegmentCtx<'a> {
         self.resolve(range.start)
             .map(|data| &data[..(range.end - range.start) as usize])
     }
+
     pub fn resolve_vrom(&self, addr: SegmentAddr) -> Result<Range<VromAddr>, SegmentResolveError> {
         if let Some((_, ref vrom)) = self.mappings.get(&addr.segment()) {
             return Ok(vrom.start + addr.offset()..vrom.end);

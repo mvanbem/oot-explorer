@@ -1,3 +1,17 @@
+macro_rules! declare_pointer_descriptor {
+    ($type:ident) => {
+        ::paste::paste! {
+            pub const [<$type:snake:upper _PTR_DESC>]: crate::reflect::type_::TypeDescriptor =
+                crate::reflect::type_::TypeDescriptor::Pointer(
+                    &crate::reflect::pointer::PointerDescriptor {
+                        name: concat!(stringify!($type), "*"),
+                        underlying: [<$type:snake:upper _DESC>],
+                    },
+                );
+        }
+    };
+}
+
 macro_rules! compile_interfaces {
     // Parse the end of input.
     (@parse Init $ignored_state:tt /* empty */) => {};
@@ -288,13 +302,12 @@ macro_rules! compile_interfaces {
         type: (ptr-aggregate $type:ident)
         location: (simple $offset:literal)
     }) => {
-        crate::reflect::struct_::FieldDescriptor {
-            name: stringify!($name),
-            location: crate::reflect::struct_::StructFieldLocation::Simple { offset: $offset },
-            desc: crate::reflect::type_::TypeDescriptor::Primitive(
-                // TODO: Pointer types?
-                crate::reflect::primitive::PrimitiveType::U32,
-            ),
+        ::paste::paste! {
+            crate::reflect::struct_::FieldDescriptor {
+                name: stringify!($name),
+                location: crate::reflect::struct_::StructFieldLocation::Simple { offset: $offset },
+                desc: [<$type:snake:upper _PTR_DESC>],
+            }
         }
     };
     (@emit_field_descriptor {
@@ -362,8 +375,12 @@ macro_rules! compile_interfaces {
         type: (ptr-aggregate $type:ident)
         location: (simple $offset:literal)
     }) => {
-        pub fn $name(self) -> crate::segment::SegmentAddr {
-            crate::segment::SegmentAddr(compile_interfaces!(@read_simple_field self u32 $offset))
+        pub fn $name(self, segment_ctx: &crate::segment::SegmentCtx<'scope>) -> $type<'scope> {
+            let ptr = crate::segment::SegmentAddr(
+                compile_interfaces!(@read_simple_field self u32 $offset),
+            );
+            let data = segment_ctx.resolve(ptr).unwrap();
+            <$type as crate::reflect::instantiate::Instantiate>::new(data)
         }
     };
     (@emit_field_accessor {

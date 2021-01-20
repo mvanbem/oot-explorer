@@ -3,8 +3,19 @@ use scoped_owner::ScopedOwner;
 
 use crate::fs::{LazyFileSystem, VirtualSliceError, VromAddr};
 
+use super::type_::TypeDescriptor;
+
+pub const BOOL_DESC: TypeDescriptor = TypeDescriptor::Primitive(PrimitiveType::Bool);
+pub const U8_DESC: TypeDescriptor = TypeDescriptor::Primitive(PrimitiveType::U8);
+pub const I8_DESC: TypeDescriptor = TypeDescriptor::Primitive(PrimitiveType::I8);
+pub const U16_DESC: TypeDescriptor = TypeDescriptor::Primitive(PrimitiveType::U16);
+pub const I16_DESC: TypeDescriptor = TypeDescriptor::Primitive(PrimitiveType::I16);
+pub const U32_DESC: TypeDescriptor = TypeDescriptor::Primitive(PrimitiveType::U32);
+pub const I32_DESC: TypeDescriptor = TypeDescriptor::Primitive(PrimitiveType::I32);
+
 #[derive(Clone, Copy)]
 pub enum PrimitiveType {
+    Bool,
     U8,
     I8,
     U16,
@@ -16,6 +27,7 @@ pub enum PrimitiveType {
 impl PrimitiveType {
     pub fn name(&self) -> &'static str {
         match self {
+            PrimitiveType::Bool => "bool",
             PrimitiveType::U8 => "u8",
             PrimitiveType::I8 => "i8",
             PrimitiveType::U16 => "u16",
@@ -34,6 +46,7 @@ impl PrimitiveType {
         let mut fetch = |size| fs.get_virtual_slice(scope, addr..addr + size);
 
         Ok(match self {
+            PrimitiveType::Bool => (fetch(1)?[0] != 0) as u32,
             PrimitiveType::U8 => fetch(1)?[0] as u32,
             PrimitiveType::I8 => fetch(1)?[0] as i8 as u32,
             PrimitiveType::U16 => fetch(2)?.read_u16::<BigEndian>().unwrap() as u32,
@@ -54,6 +67,7 @@ pub(super) fn dump_primitive<'scope>(
         let mut fetch = |size| fs.get_virtual_slice(scope, addr..addr + size);
 
         match desc {
+            PrimitiveType::Bool => print!("{}", fetch(1)?[0] != 0),
             PrimitiveType::U8 => print!("{}", fetch(1)?[0]),
             PrimitiveType::I8 => print!("{}", fetch(1)?[0] as i8),
             PrimitiveType::U16 => {

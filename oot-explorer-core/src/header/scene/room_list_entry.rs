@@ -3,8 +3,30 @@ use scoped_owner::ScopedOwner;
 use std::fmt::{self, Debug, Formatter};
 
 use crate::fs::{LazyFileSystem, VromAddr};
+use crate::reflect::instantiate::Instantiate;
+use crate::reflect::primitive::PrimitiveType;
+use crate::reflect::sized::ReflectSized;
+use crate::reflect::struct_::{FieldDescriptor, StructDescriptor, StructFieldLocation};
+use crate::reflect::type_::TypeDescriptor;
 use crate::room::Room;
-use crate::slice::StructReader;
+
+pub const ROOM_LIST_ENTRY_DESC: TypeDescriptor = TypeDescriptor::Struct(&StructDescriptor {
+    name: "RoomListEntry",
+    size: Some(8),
+    is_end: None,
+    fields: &[
+        FieldDescriptor {
+            name: "start",
+            location: StructFieldLocation::Simple { offset: 0 },
+            desc: TypeDescriptor::Primitive(PrimitiveType::U32),
+        },
+        FieldDescriptor {
+            name: "end",
+            location: StructFieldLocation::Simple { offset: 4 },
+            desc: TypeDescriptor::Primitive(PrimitiveType::U32),
+        },
+    ],
+});
 
 #[derive(Clone, Copy)]
 pub struct RoomListEntry<'a> {
@@ -20,12 +42,14 @@ impl<'a> Debug for RoomListEntry<'a> {
     }
 }
 
-impl<'a> StructReader<'a> for RoomListEntry<'a> {
-    const SIZE: usize = 8;
-
+impl<'a> Instantiate<'a> for RoomListEntry<'a> {
     fn new(data: &'a [u8]) -> RoomListEntry<'a> {
         RoomListEntry { data }
     }
+}
+
+impl<'a> ReflectSized for RoomListEntry<'a> {
+    const SIZE: usize = 8;
 }
 
 impl<'a> RoomListEntry<'a> {

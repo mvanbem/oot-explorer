@@ -3,8 +3,9 @@ use num_traits::FromPrimitive;
 use std::fmt::{self, Debug, Formatter};
 use std::ops::{BitAnd, BitAndAssign, Not};
 
+use crate::reflect::instantiate::Instantiate;
+use crate::reflect::sized::ReflectSized;
 use crate::segment::SegmentAddr;
-use crate::slice::StructReader;
 
 #[derive(Clone, Copy)]
 pub struct DisplayList<'a> {
@@ -1399,11 +1400,14 @@ pub struct UnlitVertex<'a> {
     data: &'a [u8],
 }
 
-impl<'a> StructReader<'a> for UnlitVertex<'a> {
-    const SIZE: usize = 16;
+impl<'a> Instantiate<'a> for UnlitVertex<'a> {
     fn new(data: &'a [u8]) -> UnlitVertex<'a> {
         UnlitVertex { data }
     }
+}
+
+impl<'a> ReflectSized for UnlitVertex<'a> {
+    const SIZE: usize = 16;
 }
 
 impl<'a> UnlitVertex<'a> {
@@ -1437,11 +1441,14 @@ pub struct LitVertex<'a> {
     data: &'a [u8],
 }
 
-impl<'a> StructReader<'a> for LitVertex<'a> {
-    const SIZE: usize = 16;
+impl<'a> Instantiate<'a> for LitVertex<'a> {
     fn new(data: &'a [u8]) -> LitVertex<'a> {
         LitVertex { data }
     }
+}
+
+impl<'a> ReflectSized for LitVertex<'a> {
+    const SIZE: usize = 16;
 }
 
 impl<'a> LitVertex<'a> {

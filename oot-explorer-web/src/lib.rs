@@ -1,9 +1,10 @@
 use oot_explorer_core::fs::LazyFileSystem;
 use oot_explorer_core::header::room::variant::RoomHeaderVariant;
-use oot_explorer_core::header::scene::variant::SceneHeaderVariant;
+use oot_explorer_core::header::scene::SceneHeaderVariant;
 use oot_explorer_core::mesh::{
     Background, ClippedMeshEntry, JfifMeshVariant, MeshVariant, SimpleMeshEntry,
 };
+use oot_explorer_core::reflect::sourced::RangeSourced;
 use oot_explorer_core::rom::Rom;
 use oot_explorer_core::room::Room;
 use oot_explorer_core::scene::Scene;
@@ -156,7 +157,7 @@ impl Context {
 fn examine_scene<'a>(
     scope: &'a ScopedOwner,
     fs: &mut LazyFileSystem<'a>,
-    scene: Scene<'a>,
+    scene: RangeSourced<Scene<'a>>,
     dlist_interp: &mut DisplayListInterpreter,
     backgrounds: &mut Vec<String>,
 ) -> Option<[f64; 5]> {
@@ -167,9 +168,9 @@ fn examine_scene<'a>(
     };
     let mut start_pos = None;
     for header in scene.headers() {
-        match header {
+        match header.variant() {
             SceneHeaderVariant::StartPositions(header) => {
-                start_pos = header.actor_list(&ctx).iter().next().map(|actor| {
+                start_pos = header.start_positions(&ctx).iter().next().map(|actor| {
                     [
                         actor.pos_x() as f64,
                         actor.pos_y() as f64,
@@ -182,7 +183,7 @@ fn examine_scene<'a>(
             SceneHeaderVariant::RoomList(header) => {
                 for room_list_entry in header.room_list(&ctx) {
                     let room = room_list_entry.room(scope, fs);
-                    examine_room(scope, fs, scene, room, dlist_interp, backgrounds);
+                    examine_room(scope, fs, scene.clone(), room, dlist_interp, backgrounds);
                 }
             }
             _ => (),
@@ -194,7 +195,7 @@ fn examine_scene<'a>(
 fn examine_room<'a>(
     _scope: &'a ScopedOwner,
     _fs: &mut LazyFileSystem<'a>,
-    scene: Scene<'a>,
+    scene: RangeSourced<Scene<'a>>,
     room: Room<'a>,
     dlist_interp: &mut DisplayListInterpreter,
     backgrounds: &mut Vec<String>,

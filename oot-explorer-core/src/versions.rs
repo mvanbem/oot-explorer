@@ -1,8 +1,11 @@
 pub mod oot_ntsc_10 {
     use crate::fs::{LazyFileSystem, VromAddr};
+    use crate::reflect::instantiate::Instantiate;
+    use crate::reflect::sized::ReflectSized;
+    use crate::reflect::sourced::RangeSourced;
     use crate::rom::RomAddr;
     use crate::scene::Scene;
-    use crate::slice::{Slice, StructReader};
+    use crate::slice::Slice;
     use byteorder::{BigEndian, ReadBytesExt};
     use scoped_owner::ScopedOwner;
     use std::fmt::{self, Debug, Formatter};
@@ -28,6 +31,7 @@ pub mod oot_ntsc_10 {
     pub struct SceneTableEntry<'a> {
         data: &'a [u8],
     }
+
     impl<'a> Debug for SceneTableEntry<'a> {
         fn fmt(&self, f: &mut Formatter) -> fmt::Result {
             f.debug_struct("SceneTableEntry")
@@ -39,31 +43,42 @@ pub mod oot_ntsc_10 {
                 .finish()
         }
     }
-    impl<'a> StructReader<'a> for SceneTableEntry<'a> {
-        const SIZE: usize = 0x14;
+
+    impl<'a> Instantiate<'a> for SceneTableEntry<'a> {
         fn new(data: &'a [u8]) -> SceneTableEntry<'a> {
             SceneTableEntry { data }
         }
     }
+
+    impl<'a> ReflectSized for SceneTableEntry<'a> {
+        const SIZE: usize = 0x14;
+    }
+
     impl<'a> SceneTableEntry<'a> {
         pub fn scene_start(self) -> VromAddr {
             VromAddr((&self.data[0x00..]).read_u32::<BigEndian>().unwrap())
         }
+
         pub fn scene_end(self) -> VromAddr {
             VromAddr((&self.data[0x04..]).read_u32::<BigEndian>().unwrap())
         }
+
         pub fn raw_title_card_start(self) -> VromAddr {
             VromAddr((&self.data[0x08..]).read_u32::<BigEndian>().unwrap())
         }
+
         pub fn raw_title_card_end(self) -> VromAddr {
             VromAddr((&self.data[0x0c..]).read_u32::<BigEndian>().unwrap())
         }
+
         pub fn unknown_a(self) -> u8 {
             self.data[0x10]
         }
+
         pub fn render_init_function(self) -> u8 {
             self.data[0x11]
         }
+
         pub fn unknown_b(self) -> u8 {
             self.data[0x12]
         }
@@ -71,12 +86,18 @@ pub mod oot_ntsc_10 {
         pub fn scene_range(self) -> Range<VromAddr> {
             self.scene_start()..self.scene_end()
         }
-        pub fn scene(self, scope: &'a ScopedOwner, fs: &mut LazyFileSystem<'a>) -> Scene<'a> {
-            Scene::new(
-                self.scene_start(),
-                fs.get_virtual_slice_or_die(scope, self.scene_range()),
+
+        pub fn scene(
+            self,
+            scope: &'a ScopedOwner,
+            fs: &mut LazyFileSystem<'a>,
+        ) -> RangeSourced<Scene<'a>> {
+            RangeSourced::new(
+                self.scene_range(),
+                Scene::new(fs.get_virtual_slice_or_die(scope, self.scene_range())),
             )
         }
+
         pub fn title_card_range(self) -> Option<Range<VromAddr>> {
             let start = self.raw_title_card_start();
             if start == VromAddr(0) {

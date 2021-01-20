@@ -1,3 +1,5 @@
+use crate::reflect::primitive::{I16_DESC, U16_DESC};
+
 compile_interfaces! {
     #[size(0x10)]
     struct Actor {

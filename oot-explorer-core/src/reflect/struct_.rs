@@ -43,11 +43,7 @@ pub struct UnionDescriptor {
     pub is_end: Option<IsEndFn>,
     pub discriminant_offset: u32,
     pub discriminant_desc: TypeDescriptor,
-    pub variants: &'static [Option<&'static VariantDescriptor>],
-}
-
-pub struct VariantDescriptor {
-    pub fields: &'static [FieldDescriptor],
+    pub variants: &'static [(u32, TypeDescriptor)],
 }
 
 pub(super) fn dump_struct<'scope>(
@@ -106,13 +102,21 @@ pub(super) fn dump_union<'scope>(
         );
         println!(" (0x{:x})", discriminant);
 
-        match desc.variants.get(discriminant as usize) {
-            Some(Some(desc)) => {
-                for field in desc.fields {
-                    dump_field(scope, fs, segment_ctx, indent_level + 1, field, addr);
+        match desc
+            .variants
+            .binary_search_by_key(&discriminant, |&(x, _)| x)
+        {
+            Ok(index) => match desc.variants[index].1 {
+                TypeDescriptor::Struct(desc) => {
+                    for field in desc.fields {
+                        dump_field(scope, fs, segment_ctx, indent_level + 1, field, addr);
+                    }
                 }
+                _ => panic!("union variant is not a struct (this is fine, but not implemented)"),
+            },
+            Err(_) => {
+                println!("{}    (unknown variant)", indent);
             }
-            _ => println!("{}    (unknown variant)", indent),
         }
     } else {
         println!("{}    (discriminant inaccessible)", indent);

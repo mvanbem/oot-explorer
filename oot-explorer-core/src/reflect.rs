@@ -10,7 +10,9 @@ use crate::segment::SegmentCtx;
 
 pub mod bitfield;
 pub mod enum_;
+pub mod instantiate;
 pub mod primitive;
+pub mod sized;
 pub mod sourced;
 pub mod struct_;
 pub mod type_;

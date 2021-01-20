@@ -2,8 +2,9 @@ use oot_explorer_core::fs::LazyFileSystem;
 use oot_explorer_core::gbi::DisplayList;
 use oot_explorer_core::header::room::variant::mesh::MeshHeader;
 use oot_explorer_core::header::room::variant::RoomHeaderVariant;
-use oot_explorer_core::header::scene::variant::SceneHeaderVariant;
+use oot_explorer_core::header::scene::SceneHeaderVariant;
 use oot_explorer_core::mesh::{Background, JfifMeshVariant, MeshVariant, SimpleMeshEntry};
+use oot_explorer_core::reflect::sourced::RangeSourced;
 use oot_explorer_core::rom::Rom;
 use oot_explorer_core::room::Room;
 use oot_explorer_core::scene::Scene;
@@ -85,7 +86,7 @@ fn examine_scene<'a>(
     ctx: &SegmentCtx<'a>,
     dlist_interp: &mut DisplayListInterpreter,
     scene_index: usize,
-    scene: Scene<'a>,
+    scene: RangeSourced<Scene<'a>>,
 ) {
     let ctx = {
         let mut ctx = ctx.clone();
@@ -105,7 +106,7 @@ fn examine_scene<'a>(
     println!();
 
     for header in scene.headers() {
-        match header {
+        match header.variant() {
             SceneHeaderVariant::RoomList(header) => {
                 for (room_index, room_list_entry) in header.room_list(&ctx).iter().enumerate() {
                     examine_room(

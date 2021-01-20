@@ -3,8 +3,10 @@ use std::fmt::{self, Debug, Formatter};
 use std::ops::RangeInclusive;
 
 use crate::gbi::DisplayList;
+use crate::reflect::instantiate::Instantiate;
+use crate::reflect::sized::ReflectSized;
 use crate::segment::{SegmentAddr, SegmentCtx, SegmentResolveError};
-use crate::slice::{Slice, StructReader};
+use crate::slice::Slice;
 
 #[derive(Clone, Copy)]
 pub struct Mesh<'a> {
@@ -88,11 +90,13 @@ impl<'a> Debug for SimpleMeshEntry<'a> {
             .finish()
     }
 }
-impl<'a> StructReader<'a> for SimpleMeshEntry<'a> {
-    const SIZE: usize = 8;
+impl<'a> Instantiate<'a> for SimpleMeshEntry<'a> {
     fn new(data: &'a [u8]) -> SimpleMeshEntry<'a> {
         SimpleMeshEntry { data }
     }
+}
+impl<'a> ReflectSized for SimpleMeshEntry<'a> {
+    const SIZE: usize = 8;
 }
 impl<'a> SimpleMeshEntry<'a> {
     pub fn opaque_display_list_ptr(self) -> Option<SegmentAddr> {
@@ -238,12 +242,14 @@ impl<'a> MultipleJfifEntry<'a> {
     }
 }
 
-impl<'a> StructReader<'a> for MultipleJfifEntry<'a> {
-    const SIZE: usize = 0x1c;
-
+impl<'a> Instantiate<'a> for MultipleJfifEntry<'a> {
     fn new(data: &'a [u8]) -> MultipleJfifEntry<'a> {
         MultipleJfifEntry { data }
     }
+}
+
+impl<'a> ReflectSized for MultipleJfifEntry<'a> {
+    const SIZE: usize = 0x1c;
 }
 
 #[derive(Clone, Copy)]
@@ -309,11 +315,13 @@ impl<'a> Debug for ClippedMeshEntry<'a> {
             .finish()
     }
 }
-impl<'a> StructReader<'a> for ClippedMeshEntry<'a> {
-    const SIZE: usize = 16;
+impl<'a> Instantiate<'a> for ClippedMeshEntry<'a> {
     fn new(data: &'a [u8]) -> ClippedMeshEntry<'a> {
         ClippedMeshEntry { data }
     }
+}
+impl<'a> ReflectSized for ClippedMeshEntry<'a> {
+    const SIZE: usize = 16;
 }
 impl<'a> ClippedMeshEntry<'a> {
     pub fn x_max(self) -> i16 {

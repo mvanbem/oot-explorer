@@ -1,4 +1,5 @@
 use crate::reflect::enum_::EnumDescriptor;
+use crate::reflect::instantiate::Instantiate;
 use crate::reflect::primitive::PrimitiveType;
 use crate::reflect::type_::TypeDescriptor;
 
@@ -6,32 +7,20 @@ pub const SCENE_HEADER_TYPE_DESC: TypeDescriptor = TypeDescriptor::Enum(&EnumDes
     name: "SceneHeaderType",
     underlying: PrimitiveType::U8,
     values: &[
-        /* 0x00 */ Some("START_POSITIONS"),
-        /* 0x01 */ None,
-        /* 0x02 */ None,
-        /* 0x03 */ Some("COLLISION"),
-        /* 0x04 */ Some("ROOM_LIST"),
-        /* 0x05 */ None,
-        /* 0x06 */ Some("ENTRANCE_LIST"),
-        /* 0x07 */ Some("SPECIAL_OBJECTS"),
-        /* 0x08 */ None,
-        /* 0x09 */ None,
-        /* 0x0a */ None,
-        /* 0x0b */ None,
-        /* 0x0c */ None,
-        /* 0x0d */ Some("PATHWAYS"),
-        /* 0x0e */ Some("TRANSITION_ACTORS"),
-        /* 0x0f */ Some("LIGHTING"),
-        /* 0x10 */ None,
-        /* 0x11 */ Some("SKYBOX"),
-        /* 0x12 */ None,
-        /* 0x13 */ Some("EXIT_LIST"),
-        /* 0x14 */ Some("END"),
-        /* 0x15 */ Some("SOUND"),
-        /* 0x16 */ None,
-        /* 0x17 */ None,
-        /* 0x18 */ Some("ALTERNATE_HEADERS"),
-        /* 0x19 */ Some("CAMERA_AND_WORLD_MAP"),
+        (0x00, "START_POSITIONS"),
+        (0x03, "COLLISION"),
+        (0x04, "ROOM_LIST"),
+        (0x06, "ENTRANCE_LIST"),
+        (0x07, "SPECIAL_OBJECTS"),
+        (0x0d, "PATHWAYS"),
+        (0x0e, "TRANSITION_ACTORS"),
+        (0x0f, "LIGHTING"),
+        (0x11, "SKYBOX"),
+        (0x13, "EXIT_LIST"),
+        (0x14, "END"),
+        (0x15, "SOUND"),
+        (0x18, "ALTERNATE_HEADERS"),
+        (0x19, "CAMERA_AND_WORLD_MAP"),
     ],
 });
 
@@ -53,4 +42,14 @@ impl SceneHeaderType {
     pub const SOUND: SceneHeaderType = SceneHeaderType(0x15);
     pub const ALTERNATE_HEADERS: SceneHeaderType = SceneHeaderType(0x18);
     pub const CAMERA_AND_WORLD_MAP: SceneHeaderType = SceneHeaderType(0x19);
+
+    pub const fn to_u32(self) -> u32 {
+        self.0 as u32
+    }
+}
+
+impl<'scope> Instantiate<'scope> for SceneHeaderType {
+    fn new(data: &'scope [u8]) -> Self {
+        SceneHeaderType(data[0])
+    }
 }

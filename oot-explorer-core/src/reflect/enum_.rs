@@ -6,7 +6,7 @@ use crate::reflect::primitive::PrimitiveType;
 pub struct EnumDescriptor {
     pub name: &'static str,
     pub underlying: PrimitiveType,
-    pub values: &'static [Option<&'static str>],
+    pub values: &'static [(u32, &'static str)],
 }
 
 impl EnumDescriptor {
@@ -27,9 +27,9 @@ pub(super) fn dump_enum<'scope>(
     addr: VromAddr,
 ) {
     match desc.underlying.read_as_u32(scope, fs, addr) {
-        Ok(value) => match desc.values.get(value as usize) {
-            Some(Some(name)) => print!("{}", name),
-            _ => print!("(unknown value 0x{:x}", value),
+        Ok(value) => match desc.values.binary_search_by_key(&value, |&(x, _)| x) {
+            Ok(index) => print!("{}", desc.values[index].1),
+            Err(_) => print!("(unknown value 0x{:x}", value),
         },
         Err(VirtualSliceError::OutOfRange { .. }) => print!("(inaccessible)"),
     }

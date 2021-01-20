@@ -1,5 +1,7 @@
+use crate::reflect::instantiate::Instantiate;
+use crate::reflect::sized::ReflectSized;
 use crate::segment::{SegmentAddr, SegmentCtx};
-use crate::slice::{Slice, StructReader};
+use crate::slice::Slice;
 use byteorder::{BigEndian, ReadBytesExt};
 use std::fmt::{self, Debug, Formatter};
 use std::ops::RangeInclusive;
@@ -133,11 +135,13 @@ impl<'a> Debug for Vertex<'a> {
             .finish()
     }
 }
-impl<'a> StructReader<'a> for Vertex<'a> {
-    const SIZE: usize = 6;
+impl<'a> Instantiate<'a> for Vertex<'a> {
     fn new(data: &'a [u8]) -> Vertex<'a> {
         Vertex { data }
     }
+}
+impl<'a> ReflectSized for Vertex<'a> {
+    const SIZE: usize = 6;
 }
 impl<'a> Vertex<'a> {
     pub fn x(self) -> i16 {
@@ -177,11 +181,13 @@ impl<'a> Debug for Triangle<'a> {
             .finish()
     }
 }
-impl<'a> StructReader<'a> for Triangle<'a> {
-    const SIZE: usize = 0x10;
+impl<'a> Instantiate<'a> for Triangle<'a> {
     fn new(data: &'a [u8]) -> Triangle<'a> {
         Triangle { data }
     }
+}
+impl<'a> ReflectSized for Triangle<'a> {
+    const SIZE: usize = 0x10;
 }
 impl<'a> Triangle<'a> {
     pub fn type_(self) -> u16 {
@@ -238,11 +244,13 @@ impl<'a> Debug for TriangleType<'a> {
             .finish()
     }
 }
-impl<'a> StructReader<'a> for TriangleType<'a> {
-    const SIZE: usize = 8;
+impl<'a> Instantiate<'a> for TriangleType<'a> {
     fn new(data: &'a [u8]) -> TriangleType<'a> {
         TriangleType { data }
     }
+}
+impl<'a> ReflectSized for TriangleType<'a> {
+    const SIZE: usize = 8;
 }
 impl<'a> TriangleType<'a> {
     pub fn high_value(self) -> u32 {
@@ -266,11 +274,13 @@ impl<'a> Debug for CameraData<'a> {
             .finish()
     }
 }
-impl<'a> StructReader<'a> for CameraData<'a> {
-    const SIZE: usize = 8;
+impl<'a> Instantiate<'a> for CameraData<'a> {
     fn new(data: &'a [u8]) -> CameraData<'a> {
         CameraData { data }
     }
+}
+impl<'a> ReflectSized for CameraData<'a> {
+    const SIZE: usize = 8;
 }
 impl<'a> CameraData<'a> {
     pub fn s_type(self) -> u16 {
@@ -300,11 +310,13 @@ impl<'a> Debug for WaterBox<'a> {
             .finish()
     }
 }
-impl<'a> StructReader<'a> for WaterBox<'a> {
-    const SIZE: usize = 0x10;
+impl<'a> Instantiate<'a> for WaterBox<'a> {
     fn new(data: &'a [u8]) -> WaterBox<'a> {
         WaterBox { data }
     }
+}
+impl<'a> ReflectSized for WaterBox<'a> {
+    const SIZE: usize = 0x10;
 }
 impl<'a> WaterBox<'a> {
     pub fn x_min(self) -> i16 {

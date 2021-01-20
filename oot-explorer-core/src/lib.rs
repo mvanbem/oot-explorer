@@ -1,7 +1,13 @@
+#![cfg_attr(feature = "trace_macros", feature(trace_macros))]
+
+#[cfg(feature = "trace_macros")]
+trace_macros!(true);
+
 #[macro_use]
 mod macros;
 
 pub mod collision;
+pub mod delimited;
 pub mod fs;
 pub mod gbi;
 pub mod header;

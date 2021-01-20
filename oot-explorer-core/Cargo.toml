@@ -14,3 +14,7 @@ num-traits = "0.2"
 paste = "1"
 scoped-owner = { path = "../scoped-owner" }
 thiserror = "1"
+
+[features]
+default = []
+trace_macros = []

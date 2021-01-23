@@ -92,7 +92,7 @@ macro_rules! compile_interfaces {
 
         // Item to parse.
         {
-            $field_type:ident $field_name:ident $(@$field_offset:literal)?;
+            $field_type:ident $field_name:ident @$field_offset:literal;
             $($body:tt)*
         }
 
@@ -111,7 +111,7 @@ macro_rules! compile_interfaces {
                     {
                         name: $field_name
                         type: (scalar $field_type)
-                        location: (simple [$($field_offset)?])
+                        location: (simple $field_offset)
                         prev: $prev_field
                     }
                 ]
@@ -134,7 +134,7 @@ macro_rules! compile_interfaces {
 
         // Item to parse.
         {
-            struct $field_type:ident $field_name:ident $(@$field_offset:literal)?;
+            struct $field_type:ident $field_name:ident @$field_offset:literal;
             $($body:tt)*
         }
 
@@ -153,7 +153,7 @@ macro_rules! compile_interfaces {
                     {
                         name: $field_name
                         type: (aggregate $field_type)
-                        location: (simple [$($field_offset)?])
+                        location: (simple $field_offset)
                         prev: $prev_field
                     }
                 ]
@@ -176,7 +176,7 @@ macro_rules! compile_interfaces {
 
         // Item to parse.
         {
-            struct $field_type:ident *$field_name:ident $(@$field_offset:literal)?;
+            struct $field_type:ident *$field_name:ident @$field_offset:literal;
             $($body:tt)*
         }
 
@@ -195,7 +195,7 @@ macro_rules! compile_interfaces {
                     {
                         name: $field_name
                         type: (ptr-aggregate $field_type)
-                        location: (simple [$($field_offset)?])
+                        location: (simple $field_offset)
                         prev: $prev_field
                     }
                 ]
@@ -375,13 +375,6 @@ macro_rules! compile_interfaces {
         ::paste::paste! {
             #[allow(dead_code)]
             impl<'scope> $name<'scope> {
-                $(
-                    compile_interfaces!(@emit_field_size_align $field);
-                    compile_interfaces!(@emit_field_offset $field);
-                    compile_interfaces!(@emit_field_running_max_align $field);
-                )*
-                compile_interfaces!(@emit_calculated_size $prev_field);
-
                 pub fn new(data: &'scope [u8]) -> Self {
                     Self { data }
                 }
@@ -409,37 +402,25 @@ macro_rules! compile_interfaces {
 
     // Emit a Rust `FieldDescriptor` literal.
     (@emit_field_descriptor $struct_name:ident {
-        name: $field_name:ident
-        type: (scalar $type:ident)
-        location: (simple [])
-        prev: $_:tt
-    }) => {
-        compile_interfaces!(@emit_nonptr_simple_field_descriptor
-            $field_name
-            $type
-            (::paste::paste!($struct_name::[<$field_name:upper _OFFSET>]) as u32)
-        )
-    };
-    (@emit_field_descriptor $struct_name:ident {
         name: $name:ident
         type: (scalar $type:ident)
-        location: (simple [$offset:literal])
+        location: (simple $offset:literal)
         prev: $_:tt
     }) => {
-        compile_interfaces!(@emit_nonptr_simple_field_descriptor $name $type ($offset))
+        compile_interfaces!(@emit_nonptr_simple_field_descriptor $name $type $offset)
     };
     (@emit_field_descriptor $struct_name:ident {
         name: $name:ident
         type: (aggregate $type:ident)
-        location: (simple [$offset:literal])
+        location: (simple $offset:literal)
         prev: $_:tt
     }) => {
-        compile_interfaces!(@emit_nonptr_simple_field_descriptor $name $type ($offset))
+        compile_interfaces!(@emit_nonptr_simple_field_descriptor $name $type $offset)
     };
     (@emit_field_descriptor $struct_name:ident {
         name: $name:ident
         type: (ptr-aggregate $type:ident)
-        location: (simple [$offset:literal])
+        location: (simple $offset:literal)
         prev: $_:tt
     }) => {
         ::paste::paste! {
@@ -505,7 +486,7 @@ macro_rules! compile_interfaces {
 
     // Emit a Rust `FieldDescriptor` literal for a field that has a non-pointer type and simple
     // location.
-    (@emit_nonptr_simple_field_descriptor $name:ident $type:ident ($offset:expr)) => {
+    (@emit_nonptr_simple_field_descriptor $name:ident $type:ident $offset:literal) => {
         ::paste::paste! {
             $crate::reflect::struct_::FieldDescriptor {
                 name: stringify!($name),
@@ -519,40 +500,28 @@ macro_rules! compile_interfaces {
     (@emit_field_accessor {
         name: $name:ident
         type: (scalar $type:ident)
-        location: (simple [])
+        location: (simple $offset:literal)
         prev: $_:tt
     }) => {
-        compile_interfaces!(@emit_scalar_simple_field_accessor
-            $name
-            $type
-            (::paste::paste!(Self::[<$name:upper _OFFSET>]))
-        );
-    };
-    (@emit_field_accessor {
-        name: $name:ident
-        type: (scalar $type:ident)
-        location: (simple [$offset:literal])
-        prev: $_:tt
-    }) => {
-        compile_interfaces!(@emit_scalar_simple_field_accessor $name $type ($offset));
+        compile_interfaces!(@emit_scalar_simple_field_accessor $name $type $offset);
     };
     (@emit_field_accessor {
         name: $name:ident
         type: (aggregate $type:ident)
-        location: (simple [$offset:literal])
+        location: (simple $offset:literal)
         prev: $_:tt
     }) => {
-        compile_interfaces!(@emit_aggregate_simple_field_accessor $name $type ($offset));
+        compile_interfaces!(@emit_aggregate_simple_field_accessor $name $type $offset);
     };
     (@emit_field_accessor {
         name: $name:ident
         type: (ptr-aggregate $type:ident)
-        location: (simple [$offset:literal])
+        location: (simple $offset:literal)
         prev: $_:tt
     }) => {
         pub fn $name(self, segment_ctx: &$crate::segment::SegmentCtx<'scope>) -> $type<'scope> {
             let ptr = $crate::segment::SegmentAddr(
-                compile_interfaces!(@read_simple_field self u32 ($offset)),
+                compile_interfaces!(@read_simple_field self u32 $offset),
             );
             let data = segment_ctx.resolve(ptr).unwrap();
             <$type as $crate::reflect::instantiate::Instantiate>::new(data)
@@ -569,9 +538,9 @@ macro_rules! compile_interfaces {
             segment_ctx: &$crate::segment::SegmentCtx<'scope>,
         ) -> $crate::slice::Slice<'scope, $type> {
             let ptr = $crate::segment::SegmentAddr(
-                compile_interfaces!(@read_simple_field self u32 ($ptr_offset)),
+                compile_interfaces!(@read_simple_field self u32 $ptr_offset),
             );
-            let count = compile_interfaces!(@read_simple_field self $count_type ($count_offset));
+            let count = compile_interfaces!(@read_simple_field self $count_type $count_offset);
             $crate::slice::Slice::new(segment_ctx.resolve(ptr).unwrap(), count as usize)
         }
     };
@@ -586,9 +555,9 @@ macro_rules! compile_interfaces {
             segment_ctx: &$crate::segment::SegmentCtx<'scope>,
         ) -> $crate::slice::Slice<'scope, $type<'scope>> {
             let ptr = $crate::segment::SegmentAddr(
-                compile_interfaces!(@read_simple_field self u32 ($ptr_offset)),
+                compile_interfaces!(@read_simple_field self u32 $ptr_offset),
             );
-            let count = compile_interfaces!(@read_simple_field self $count_type ($count_offset));
+            let count = compile_interfaces!(@read_simple_field self $count_type $count_offset);
             $crate::slice::Slice::new(segment_ctx.resolve(ptr).unwrap(), count as usize)
         }
     };
@@ -604,240 +573,26 @@ macro_rules! compile_interfaces {
     };
 
     // Emit a Rust method to access a field that has a scalar type and simple location.
-    (@emit_scalar_simple_field_accessor $name:ident $type:ident ($offset:expr)) => {
+    (@emit_scalar_simple_field_accessor $name:ident $type:ident $offset:literal) => {
         pub fn $name(self) -> $type {
-            compile_interfaces!(@read_simple_field self $type ($offset))
+            compile_interfaces!(@read_simple_field self $type $offset)
         }
     };
 
     // Emit a Rust method to access a field that has an aggregate type and simple location.
-    (@emit_aggregate_simple_field_accessor $name:ident $type:ident ($offset:expr)) => {
+    (@emit_aggregate_simple_field_accessor $name:ident $type:ident $offset:literal) => {
         pub fn $name(self) -> $type<'scope> {
-            compile_interfaces!(@read_simple_field self $type ($offset))
+            compile_interfaces!(@read_simple_field self $type $offset)
         }
     };
 
     // Emit a Rust expression to access a field with simple location.
-    (@read_simple_field $self:ident $type:ident ($offset:expr)) => {
+    (@read_simple_field $self:ident $type:ident $offset:expr) => {
         <$type as $crate::reflect::instantiate::Instantiate<'scope>>::new(&$self.data[$offset..])
     };
 
-    (@emit_field_size_align {
-        name: $name:ident
-        type: (scalar $_type:tt)
-        location: (slice $count_type:ident $count_offset:literal $ptr_offset:literal)
-        prev: $_prev:tt
-    }) => {
-        ::paste::paste! {
-            const [<$name:upper _COUNT_SIZE>]: usize =
-                <$count_type as $crate::reflect::sized::ReflectSized>::SIZE;
-            const [<$name:upper _COUNT_ALIGN_BITS>]: u32 =
-                <$count_type as $crate::reflect::sized::ReflectSized>::ALIGN_BITS;
-            const [<$name:upper _SIZE>]: usize =
-                <$crate::segment::SegmentAddr as $crate::reflect::sized::ReflectSized>::SIZE;
-            const [<$name:upper _ALIGN_BITS>]: u32 =
-                <$crate::segment::SegmentAddr as $crate::reflect::sized::ReflectSized>::ALIGN_BITS;
-        }
-    };
-    (@emit_field_size_align {
-        name: $name:ident
-        type: (aggregate $_type:tt)
-        location: (slice $count_type:ident $count_offset:literal $ptr_offset:literal)
-        prev: $_prev:tt
-    }) => {
-        ::paste::paste! {
-            const [<$name:upper _COUNT_SIZE>]: usize =
-                <$count_type as $crate::reflect::sized::ReflectSized>::SIZE;
-            const [<$name:upper _COUNT_ALIGN_BITS>]: u32 =
-                <$count_type as $crate::reflect::sized::ReflectSized>::ALIGN_BITS;
-            const [<$name:upper _SIZE>]: usize =
-                <$crate::segment::SegmentAddr as $crate::reflect::sized::ReflectSized>::SIZE;
-            const [<$name:upper _ALIGN_BITS>]: u32 =
-                <$crate::segment::SegmentAddr as $crate::reflect::sized::ReflectSized>::ALIGN_BITS;
-        }
-    };
-    (@emit_field_size_align {
-        name: $name:ident
-        type: (scalar $type:ident)
-        location: $_location:tt
-        prev: $_prev:tt
-    }) => {
-        ::paste::paste! {
-            const [<$name:upper _SIZE>]: usize =
-                <$type as $crate::reflect::sized::ReflectSized>::SIZE;
-            const [<$name:upper _ALIGN_BITS>]: u32 =
-                <$type as $crate::reflect::sized::ReflectSized>::ALIGN_BITS;
-        }
-    };
-    (@emit_field_size_align {
-        name: $name:ident
-        type: (aggregate $type:ident)
-        location: $_location:tt
-        prev: $_prev:tt
-    }) => {
-        ::paste::paste! {
-            const [<$name:upper _SIZE>]: usize =
-                <$type as $crate::reflect::sized::ReflectSized>::SIZE;
-            const [<$name:upper _ALIGN_BITS>]: u32 =
-                <$type as $crate::reflect::sized::ReflectSized>::ALIGN_BITS;
-        }
-    };
-    (@emit_field_size_align {
-        name: $name:ident
-        type: (ptr-aggregate $type:ident)
-        location: $_location:tt
-        prev: $_prev:tt
-    }) => {
-        ::paste::paste! {
-            const [<$name:upper _SIZE>]: usize =
-                <$crate::segment::SegmentAddr as $crate::reflect::sized::ReflectSized>::SIZE;
-            const [<$name:upper _ALIGN_BITS>]: u32 =
-                <$crate::segment::SegmentAddr as $crate::reflect::sized::ReflectSized>::ALIGN_BITS;
-        }
-    };
-
-    (@emit_field_offset {
-        name: $name:ident
-        type: (scalar $_type:tt)
-        location: (slice $count_type:ident $count_offset:literal $ptr_offset:literal)
-        prev: (None)
-    }) => {
-        ::paste::paste! {
-            pub const [<$name:upper _COUNT_OFFSET>]: usize = 0;
-            pub const [<$name:upper _OFFSET>]: usize = $crate::reflect::sized::place_field(
-                Self::[<$name:upper _COUNT_OFFSET>] + Self::[<$name:upper _COUNT_SIZE>],
-                Self::[<$name:upper _ALIGN_BITS>],
-            );
-        }
-    };
-    (@emit_field_offset {
-        name: $name:ident
-        type: (scalar $_type:tt)
-        location: (slice $count_type:ident $count_offset:literal $ptr_offset:literal)
-        prev: (Some($prev:ident))
-    }) => {
-        ::paste::paste! {
-            pub const [<$name:upper _COUNT_OFFSET>]: usize = $crate::reflect::sized::place_field(
-                Self::[<$prev:upper _OFFSET>] + Self::[<$prev:upper _SIZE>],
-                Self::[<$name:upper _COUNT_ALIGN_BITS>],
-            );
-            pub const [<$name:upper _OFFSET>]: usize = $crate::reflect::sized::place_field(
-                Self::[<$name:upper _COUNT_OFFSET>] + Self::[<$name:upper _COUNT_SIZE>],
-                Self::[<$name:upper _ALIGN_BITS>],
-            );
-        }
-    };
-    (@emit_field_offset {
-        name: $name:ident
-        type: (aggregate $_type:tt)
-        location: (slice $count_type:ident $count_offset:literal $ptr_offset:literal)
-        prev: (None)
-    }) => {
-        ::paste::paste! {
-            pub const [<$name:upper _COUNT_OFFSET>]: usize = 0;
-            pub const [<$name:upper _OFFSET>]: usize = $crate::reflect::sized::place_field(
-                Self::[<$name:upper _COUNT_OFFSET>] + Self::[<$name:upper _COUNT_SIZE>],
-                Self::[<$name:upper _ALIGN_BITS>],
-            );
-        }
-    };
-    (@emit_field_offset {
-        name: $name:ident
-        type: (aggregate $_type:tt)
-        location: (slice $count_type:ident $count_offset:literal $ptr_offset:literal)
-        prev: (Some($prev:ident))
-    }) => {
-        ::paste::paste! {
-            pub const [<$name:upper _COUNT_OFFSET>]: usize = $crate::reflect::sized::place_field(
-                Self::[<$prev:upper _OFFSET>] + Self::[<$prev:upper _SIZE>],
-                Self::[<$name:upper _COUNT_ALIGN_BITS>],
-            );
-            pub const [<$name:upper _OFFSET>]: usize = $crate::reflect::sized::place_field(
-                Self::[<$name:upper _COUNT_OFFSET>] + Self::[<$name:upper _COUNT_SIZE>],
-                Self::[<$name:upper _ALIGN_BITS>],
-            );
-        }
-    };
-    (@emit_field_offset {
-        name: $name:ident
-        type: $_type:tt
-        location: $_location:tt
-        prev: (None)
-    }) => {
-        ::paste::paste! {
-            pub const [<$name:upper _OFFSET>]: usize = 0;
-        }
-    };
-    (@emit_field_offset {
-        name: $name:ident
-        type: $_type:tt
-        location: (simple ($offset:expr))
-        prev: (Some($prev:ident))
-    }) => {
-        ::paste::paste! {
-            pub const [<$name:upper _OFFSET>]: usize = $offset;
-        }
-    };
-    (@emit_field_offset {
-        name: $name:ident
-        type: $_type:tt
-        location: $_location:tt
-        prev: (Some($prev:ident))
-    }) => {
-        ::paste::paste! {
-            pub const [<$name:upper _OFFSET>]: usize = $crate::reflect::sized::place_field(
-                Self::[<$prev:upper _OFFSET>] + Self::[<$prev:upper _SIZE>],
-                Self::[<$name:upper _ALIGN_BITS>],
-            );
-        }
-    };
-
-    (@emit_field_running_max_align {
-        name: $name:ident
-        type: $_type:tt
-        location: $_location:tt
-        prev: (None)
-    }) => {
-        ::paste::paste! {
-            const [<$name:upper _RUNNING_MAX_ALIGN_BITS>]: u32 =
-                Self::[<$name:upper _ALIGN_BITS>];
-        }
-    };
-    (@emit_field_running_max_align {
-        name: $name:ident
-        type: $_type:tt
-        location: $_location:tt
-        prev: (Some($prev:ident))
-    }) => {
-        ::paste::paste! {
-            const [<$name:upper _RUNNING_MAX_ALIGN_BITS>]: u32 =
-                $crate::reflect::sized::max_align(
-                    Self::[<$prev:upper _RUNNING_MAX_ALIGN_BITS>],
-                    Self::[<$name:upper _ALIGN_BITS>],
-                );
-        }
-    };
-
-    (@emit_calculated_size (Some($last_field:ident))) => {
-        ::paste::paste! {
-            const CALCULATED_SIZE: usize = $crate::reflect::sized::place_field(
-                Self::[<$last_field:upper _OFFSET>] + Self::[<$last_field:upper _SIZE>],
-                Self::[<$last_field:upper _RUNNING_MAX_ALIGN_BITS>],
-            );
-        }
-    };
-    (@emit_calculated_size (None)) => {
-        const CALCULATED_SIZE: usize = 0;
-    };
-
     // Emit a Rust impl for the `ReflectSized` trait.
-    (@emit_reflect_sized_impl $name:ident (None)) => {
-        ::paste::paste! {
-            impl<'scope> $crate::reflect::sized::ReflectSized for $name<'scope> {
-                const SIZE: usize = $name::CALCULATED_SIZE;
-            }
-        }
-    };
+    (@emit_reflect_sized_impl $name:ident (None)) => {};
     (@emit_reflect_sized_impl $name:ident (Some($size:literal))) => {
         impl<'scope> $crate::reflect::sized::ReflectSized for $name<'scope> {
             const SIZE: usize = $size;

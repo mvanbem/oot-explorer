@@ -4,31 +4,6 @@ use crate::slice::Slice;
 
 declare_pointer_descriptor!(Collision);
 
-#[cfg(test)]
-mod tests {
-    use super::Collision;
-    use crate::reflect::sized::ReflectSized;
-
-    #[test]
-    fn collision_layout() {
-        assert_eq!(Collision::X_MIN_OFFSET, 0x00);
-        assert_eq!(Collision::Y_MIN_OFFSET, 0x02);
-        assert_eq!(Collision::Z_MIN_OFFSET, 0x04);
-        assert_eq!(Collision::X_MAX_OFFSET, 0x06);
-        assert_eq!(Collision::Y_MAX_OFFSET, 0x08);
-        assert_eq!(Collision::Z_MAX_OFFSET, 0x0a);
-        assert_eq!(Collision::VERTICES_COUNT_OFFSET, 0x0c);
-        assert_eq!(Collision::VERTICES_OFFSET, 0x10);
-        assert_eq!(Collision::TRIANGLES_COUNT_OFFSET, 0x14);
-        assert_eq!(Collision::TRIANGLES_OFFSET, 0x18);
-        assert_eq!(Collision::TRIANGLE_TYPES_PTR_OFFSET, 0x1c);
-        assert_eq!(Collision::CAMERA_DATA_PTR_OFFSET, 0x20);
-        assert_eq!(Collision::WATER_BOXES_COUNT_OFFSET, 0x24);
-        assert_eq!(Collision::WATER_BOXES_OFFSET, 0x28);
-        assert_eq!(Collision::SIZE, 0x2c);
-    }
-}
-
 compile_interfaces! {
     struct Collision {
         i16 x_min @0x00;
@@ -42,7 +17,7 @@ compile_interfaces! {
         // TODO: Type as TriangleType[?]*
         SegmentAddr triangle_types_ptr @0x1c;
         // TODO: Type as ...
-        SegmentAddr camera_data_ptr @0x1f;
+        SegmentAddr camera_data_ptr @0x20;
         struct WaterBox[u16 @0x24]* water_boxes @0x28;
     }
 

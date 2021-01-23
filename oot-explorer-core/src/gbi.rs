@@ -5,7 +5,19 @@ use std::ops::{BitAnd, BitAndAssign, Not};
 
 use crate::reflect::instantiate::Instantiate;
 use crate::reflect::sized::ReflectSized;
+use crate::reflect::struct_::StructDescriptor;
+use crate::reflect::type_::TypeDescriptor;
 use crate::segment::SegmentAddr;
+
+declare_pointer_descriptor!(DisplayList);
+
+// TODO: Codegen display list types.
+pub const DISPLAY_LIST_DESC: TypeDescriptor = TypeDescriptor::Struct(&StructDescriptor {
+    name: "DisplayList",
+    size: None,
+    is_end: None,
+    fields: &[],
+});
 
 #[derive(Clone, Copy)]
 pub struct DisplayList<'a> {

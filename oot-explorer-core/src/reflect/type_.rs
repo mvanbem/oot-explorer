@@ -35,7 +35,7 @@ impl TypeDescriptor {
             TypeDescriptor::Union(desc) => desc.size,
             TypeDescriptor::Enum(_) => None,
             TypeDescriptor::Bitfield(_) => None,
-            TypeDescriptor::Primitive(_) => None,
+            TypeDescriptor::Primitive(desc) => desc.size(),
             TypeDescriptor::Pointer(_) => Some(4),
         }
     }

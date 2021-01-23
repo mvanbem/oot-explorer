@@ -1,73 +1,91 @@
-use byteorder::{BigEndian, ReadBytesExt};
-use std::fmt::{self, Debug, Formatter};
-use std::ops::RangeInclusive;
-
 use crate::gbi::DisplayList;
+use crate::mesh::type_::{MeshType, MESH_TYPE_DESC};
+use crate::reflect::enum_::EnumDescriptor;
 use crate::reflect::instantiate::Instantiate;
-use crate::reflect::sized::ReflectSized;
-use crate::segment::{SegmentAddr, SegmentCtx, SegmentResolveError};
+use crate::reflect::primitive::{PrimitiveType, I16_DESC, I8_DESC, U8_DESC};
+use crate::reflect::type_::TypeDescriptor;
+use crate::segment::{SegmentAddr, SegmentCtx, SegmentResolveError, SEGMENT_ADDR_DESC};
 use crate::slice::Slice;
 
-#[derive(Clone, Copy)]
-pub struct Mesh<'a> {
-    data: &'a [u8],
-}
-impl<'a> Debug for Mesh<'a> {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        f.debug_struct("Mesh")
-            .field("type_", &self.type_())
-            .finish()
+pub mod type_;
+
+declare_pointer_descriptor!(Mesh);
+declare_pointer_descriptor!(SimpleMeshEntry);
+
+compile_interfaces! {
+    #[size(0x10)]
+    union Mesh: MeshType @0 {
+        struct SimpleMesh simple #MeshType::SIMPLE;
+        struct JfifMesh jfif #MeshType::JFIF;
+        struct ClippedMesh clipped #MeshType::CLIPPED;
     }
-}
-impl<'a> Mesh<'a> {
-    pub fn new(data: &'a [u8]) -> Mesh<'a> {
-        Mesh { data }
+
+    #[size(0xc)]
+    struct SimpleMesh {
+        u8 count @1;
+        SegmentAddr start @4;
+        SegmentAddr end @8;
     }
-    pub fn type_(self) -> u8 {
-        self.data[0]
+
+    #[size(8)]
+    struct SimpleMeshEntry {
+        // TODO: Guarded getters in codegen, then type these as pointers.
+        SegmentAddr opaque_display_list_ptr @0;
+        SegmentAddr translucent_display_list_ptr @4;
     }
-    pub fn variant(self) -> MeshVariant<'a> {
-        let data = self.data;
-        match self.type_() {
-            0x00 => MeshVariant::Simple(SimpleMesh { data }),
-            0x01 => MeshVariant::Jfif(JfifMesh { data }),
-            0x02 => MeshVariant::Clipped(ClippedMesh { data }),
-            type_ => panic!("unexpected mesh type: 0x{:02x}", type_),
-        }
+
+    #[size(0x10)]
+    union JfifMesh: JfifMeshType @1 {
+        struct SingleJfif single #JfifMeshType::SINGLE;
+        struct MultipleJfif multiple #JfifMeshType::MULTIPLE;
+    }
+
+    #[size(0x20)]
+    struct SingleJfif {
+        struct SimpleMeshEntry* mesh_entry @4;
+        struct Background background @8;
+    }
+
+    #[size(0x10)]
+    struct MultipleJfif {
+        struct SimpleMeshEntry* mesh_entry @4;
+        struct MultipleJfifEntry[u8 @8]* background_entries @0x0c;
+    }
+
+    #[size(0x1c)]
+    struct MultipleJfifEntry {
+        i8 id @2;
+        struct Background background @4;
+    }
+
+    #[size(0x18)]
+    struct Background {
+        SegmentAddr ptr @0;
+    }
+
+    #[size(0xc)]
+    struct ClippedMesh {
+        u8 count @1;
+        SegmentAddr start @4;
+        SegmentAddr end @8;
+    }
+
+    #[size(0x10)]
+    struct ClippedMeshEntry {
+        i16 x_max @0;
+        i16 z_max @2;
+        i16 x_min @4;
+        i16 z_min @6;
+        SegmentAddr opaque_display_list_ptr @8;
+        SegmentAddr translucent_display_list_ptr @0xc;
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum MeshVariant<'a> {
-    Simple(SimpleMesh<'a>),
-    Jfif(JfifMesh<'a>),
-    Clipped(ClippedMesh<'a>),
-}
-
-#[derive(Clone, Copy)]
-pub struct SimpleMesh<'a> {
-    data: &'a [u8],
-}
-impl<'a> Debug for SimpleMesh<'a> {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        f.debug_struct("SimpleMesh").finish()
-    }
-}
-impl<'a> SimpleMesh<'a> {
-    pub fn new(data: &'a [u8]) -> SimpleMesh<'a> {
-        SimpleMesh { data }
-    }
-    pub fn count(self) -> u8 {
-        self.data[1]
-    }
-    pub fn start(self) -> SegmentAddr {
-        SegmentAddr((&self.data[4..]).read_u32::<BigEndian>().unwrap())
-    }
-    pub fn end(self) -> SegmentAddr {
-        SegmentAddr((&self.data[8..]).read_u32::<BigEndian>().unwrap())
-    }
-
-    pub fn entries(self, segment_ctx: &SegmentCtx<'a>) -> Slice<'a, SimpleMeshEntry<'a>> {
+impl<'scope> SimpleMesh<'scope> {
+    pub fn entries(
+        self,
+        segment_ctx: &SegmentCtx<'scope>,
+    ) -> Slice<'scope, SimpleMeshEntry<'scope>> {
         Slice::new(
             segment_ctx.resolve_range(self.start()..self.end()).unwrap(),
             self.count() as usize,
@@ -75,222 +93,59 @@ impl<'a> SimpleMesh<'a> {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct SimpleMeshEntry<'a> {
-    data: &'a [u8],
-}
-impl<'a> Debug for SimpleMeshEntry<'a> {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        f.debug_struct("SimpleMeshEntry")
-            .field("opaque_display_list_ptr", &self.opaque_display_list_ptr())
-            .field(
-                "translucent_display_list_ptr",
-                &self.translucent_display_list_ptr(),
-            )
-            .finish()
-    }
-}
-impl<'a> Instantiate<'a> for SimpleMeshEntry<'a> {
-    fn new(data: &'a [u8]) -> SimpleMeshEntry<'a> {
-        SimpleMeshEntry { data }
-    }
-}
-impl<'a> ReflectSized for SimpleMeshEntry<'a> {
-    const SIZE: usize = 8;
-}
-impl<'a> SimpleMeshEntry<'a> {
-    pub fn opaque_display_list_ptr(self) -> Option<SegmentAddr> {
-        match (&self.data[..]).read_u32::<BigEndian>().unwrap() {
-            0 => None,
-            addr => Some(SegmentAddr(addr)),
-        }
-    }
-    pub fn translucent_display_list_ptr(self) -> Option<SegmentAddr> {
-        match (&self.data[4..]).read_u32::<BigEndian>().unwrap() {
-            0 => None,
-            addr => Some(SegmentAddr(addr)),
-        }
-    }
+impl<'scope> SimpleMeshEntry<'scope> {
+    // TODO: Guarded getters in codegen.
 
     pub fn opaque_display_list(
         self,
-        segment_ctx: &SegmentCtx<'a>,
-    ) -> Result<Option<DisplayList<'a>>, SegmentResolveError> {
+        segment_ctx: &SegmentCtx<'scope>,
+    ) -> Result<Option<DisplayList<'scope>>, SegmentResolveError> {
         self.opaque_display_list_ptr()
+            .non_null()
             .map(|ptr| segment_ctx.resolve(ptr).map(|addr| DisplayList::new(addr)))
             .transpose()
     }
+
     pub fn translucent_display_list(
         self,
-        segment_ctx: &SegmentCtx<'a>,
-    ) -> Result<Option<DisplayList<'a>>, SegmentResolveError> {
+        segment_ctx: &SegmentCtx<'scope>,
+    ) -> Result<Option<DisplayList<'scope>>, SegmentResolveError> {
         self.translucent_display_list_ptr()
+            .non_null()
             .map(|ptr| segment_ctx.resolve(ptr).map(|addr| DisplayList::new(addr)))
             .transpose()
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct JfifMesh<'a> {
-    data: &'a [u8],
-}
+pub const JFIF_MESH_TYPE_DESC: TypeDescriptor = TypeDescriptor::Enum(&EnumDescriptor {
+    name: "JfifMeshType",
+    underlying: PrimitiveType::U8,
+    values: &[(0x01, "SINGLE"), (0x02, "MULTIPLE")],
+});
 
-impl<'a> JfifMesh<'a> {
-    pub fn data(self) -> &'a [u8] {
-        self.data
-    }
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct JfifMeshType(pub u8);
 
-    pub fn format(self) -> u8 {
-        self.data[1]
-    }
+impl JfifMeshType {
+    pub const SINGLE: JfifMeshType = JfifMeshType(0x01);
+    pub const MULTIPLE: JfifMeshType = JfifMeshType(0x02);
 
-    pub fn variant(self) -> JfifMeshVariant<'a> {
-        let data = self.data;
-        match self.format() {
-            0x01 => JfifMeshVariant::Single(SingleJfif { data }),
-            0x02 => JfifMeshVariant::Multiple(MultipleJfif { data }),
-            format => panic!("unexpected JFIF format: 0x{:02x}", format),
-        }
+    pub const fn to_u32(self) -> u32 {
+        self.0 as u32
     }
 }
 
-impl<'a> Debug for JfifMesh<'a> {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        f.debug_struct("JfifMesh").finish()
+impl<'scope> Instantiate<'scope> for JfifMeshType {
+    fn new(data: &'scope [u8]) -> Self {
+        JfifMeshType(data[0])
     }
 }
 
-#[derive(Clone, Copy)]
-pub enum JfifMeshVariant<'a> {
-    Single(SingleJfif<'a>),
-    Multiple(MultipleJfif<'a>),
-}
-
-#[derive(Clone, Copy)]
-pub struct SingleJfif<'a> {
-    data: &'a [u8],
-}
-
-impl<'a> SingleJfif<'a> {
-    pub fn mesh_entry_ptr(self) -> SegmentAddr {
-        SegmentAddr((&self.data[4..]).read_u32::<BigEndian>().unwrap())
-    }
-
-    pub fn mesh_entry(self, segment_ctx: &SegmentCtx<'a>) -> SimpleMeshEntry<'a> {
-        SimpleMeshEntry {
-            data: segment_ctx.resolve(self.mesh_entry_ptr()).unwrap(),
-        }
-    }
-
-    pub fn background(self) -> Background<'a> {
-        Background {
-            data: &self.data[8..],
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-pub struct MultipleJfif<'a> {
-    data: &'a [u8],
-}
-
-impl<'a> MultipleJfif<'a> {
-    pub fn mesh_entries_ptr(self) -> SegmentAddr {
-        SegmentAddr((&self.data[4..]).read_u32::<BigEndian>().unwrap())
-    }
-
-    pub fn mesh_entries(self, segment_ctx: &SegmentCtx<'a>) -> Slice<'a, SimpleMeshEntry<'a>> {
-        Slice::new(
-            segment_ctx.resolve(self.mesh_entries_ptr()).unwrap(),
-            self.count() as usize,
-        )
-    }
-
-    pub fn count(self) -> u8 {
-        self.data[8]
-    }
-
-    pub fn ptr(self) -> SegmentAddr {
-        SegmentAddr((&self.data[0x0c..]).read_u32::<BigEndian>().unwrap())
-    }
-
-    pub fn background_entries(
+impl<'scope> ClippedMesh<'scope> {
+    pub fn entries(
         self,
-        segment_ctx: &SegmentCtx<'a>,
-    ) -> Slice<'a, MultipleJfifEntry<'a>> {
-        Slice::new(
-            segment_ctx.resolve(self.ptr()).unwrap(),
-            self.count() as usize,
-        )
-    }
-}
-
-#[derive(Clone, Copy)]
-pub struct MultipleJfifEntry<'a> {
-    data: &'a [u8],
-}
-
-impl<'a> MultipleJfifEntry<'a> {
-    pub fn id(self) -> i8 {
-        self.data[2] as i8
-    }
-
-    pub fn background(self) -> Background<'a> {
-        Background {
-            data: &self.data[4..],
-        }
-    }
-}
-
-impl<'a> Instantiate<'a> for MultipleJfifEntry<'a> {
-    fn new(data: &'a [u8]) -> MultipleJfifEntry<'a> {
-        MultipleJfifEntry { data }
-    }
-}
-
-impl<'a> ReflectSized for MultipleJfifEntry<'a> {
-    const SIZE: usize = 0x1c;
-}
-
-#[derive(Clone, Copy)]
-pub struct Background<'a> {
-    data: &'a [u8],
-}
-
-impl<'a> Background<'a> {
-    pub fn ptr(self) -> SegmentAddr {
-        SegmentAddr((&self.data[..]).read_u32::<BigEndian>().unwrap())
-    }
-}
-
-#[derive(Clone, Copy)]
-pub struct ClippedMesh<'a> {
-    data: &'a [u8],
-}
-impl<'a> Debug for ClippedMesh<'a> {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        f.debug_struct("ClippedMesh")
-            .field("count", &self.count())
-            .field("start", &self.start())
-            .field("end", &self.end())
-            .finish()
-    }
-}
-impl<'a> ClippedMesh<'a> {
-    pub fn new(data: &'a [u8]) -> ClippedMesh<'a> {
-        ClippedMesh { data }
-    }
-    pub fn count(self) -> u8 {
-        self.data[1]
-    }
-    pub fn start(self) -> SegmentAddr {
-        SegmentAddr((&self.data[4..]).read_u32::<BigEndian>().unwrap())
-    }
-    pub fn end(self) -> SegmentAddr {
-        SegmentAddr((&self.data[8..]).read_u32::<BigEndian>().unwrap())
-    }
-
-    pub fn entries(self, segment_ctx: &SegmentCtx<'a>) -> Slice<'a, ClippedMeshEntry<'a>> {
+        segment_ctx: &SegmentCtx<'scope>,
+    ) -> Slice<'scope, ClippedMeshEntry<'scope>> {
         Slice::new(
             segment_ctx.resolve_range(self.start()..self.end()).unwrap(),
             self.count() as usize,
@@ -298,76 +153,23 @@ impl<'a> ClippedMesh<'a> {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct ClippedMeshEntry<'a> {
-    data: &'a [u8],
-}
-impl<'a> Debug for ClippedMeshEntry<'a> {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        f.debug_struct("ClippedMeshEntry")
-            .field("x_range", &self.x_range())
-            .field("z_range", &self.z_range())
-            .field("opaque_display_list_ptr", &self.opaque_display_list_ptr())
-            .field(
-                "translucent_display_list_ptr",
-                &self.translucent_display_list_ptr(),
-            )
-            .finish()
-    }
-}
-impl<'a> Instantiate<'a> for ClippedMeshEntry<'a> {
-    fn new(data: &'a [u8]) -> ClippedMeshEntry<'a> {
-        ClippedMeshEntry { data }
-    }
-}
-impl<'a> ReflectSized for ClippedMeshEntry<'a> {
-    const SIZE: usize = 16;
-}
-impl<'a> ClippedMeshEntry<'a> {
-    pub fn x_max(self) -> i16 {
-        (&self.data[..]).read_i16::<BigEndian>().unwrap()
-    }
-    pub fn z_max(self) -> i16 {
-        (&self.data[2..]).read_i16::<BigEndian>().unwrap()
-    }
-    pub fn x_min(self) -> i16 {
-        (&self.data[4..]).read_i16::<BigEndian>().unwrap()
-    }
-    pub fn z_min(self) -> i16 {
-        (&self.data[6..]).read_i16::<BigEndian>().unwrap()
-    }
-    pub fn opaque_display_list_ptr(self) -> Option<SegmentAddr> {
-        match (&self.data[8..]).read_u32::<BigEndian>().unwrap() {
-            0 => None,
-            addr => Some(SegmentAddr(addr)),
-        }
-    }
-    pub fn translucent_display_list_ptr(self) -> Option<SegmentAddr> {
-        match (&self.data[12..]).read_u32::<BigEndian>().unwrap() {
-            0 => None,
-            addr => Some(SegmentAddr(addr)),
-        }
-    }
-
-    pub fn x_range(self) -> RangeInclusive<i16> {
-        self.x_min()..=self.x_max()
-    }
-    pub fn z_range(self) -> RangeInclusive<i16> {
-        self.z_min()..=self.z_max()
-    }
+impl<'scope> ClippedMeshEntry<'scope> {
     pub fn opaque_display_list(
         self,
-        segment_ctx: &SegmentCtx<'a>,
-    ) -> Result<Option<DisplayList<'a>>, SegmentResolveError> {
+        segment_ctx: &SegmentCtx<'scope>,
+    ) -> Result<Option<DisplayList<'scope>>, SegmentResolveError> {
         self.opaque_display_list_ptr()
+            .non_null()
             .map(|ptr| segment_ctx.resolve(ptr).map(|addr| DisplayList::new(addr)))
             .transpose()
     }
+
     pub fn translucent_display_list(
         self,
-        segment_ctx: &SegmentCtx<'a>,
-    ) -> Result<Option<DisplayList<'a>>, SegmentResolveError> {
+        segment_ctx: &SegmentCtx<'scope>,
+    ) -> Result<Option<DisplayList<'scope>>, SegmentResolveError> {
         self.translucent_display_list_ptr()
+            .non_null()
             .map(|ptr| segment_ctx.resolve(ptr).map(|addr| DisplayList::new(addr)))
             .transpose()
     }

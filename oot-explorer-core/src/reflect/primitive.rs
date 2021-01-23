@@ -23,11 +23,12 @@ pub enum PrimitiveType {
     I16,
     U32,
     I32,
-    VoidPtr,
+    VromAddr,
+    SegmentAddr,
 }
 
 impl PrimitiveType {
-    pub fn name(&self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             PrimitiveType::Bool => "bool",
             PrimitiveType::U8 => "u8",
@@ -36,7 +37,19 @@ impl PrimitiveType {
             PrimitiveType::I16 => "i16",
             PrimitiveType::U32 => "u32",
             PrimitiveType::I32 => "i32",
-            PrimitiveType::VoidPtr => "void*",
+            PrimitiveType::VromAddr => "VromAddr",
+            PrimitiveType::SegmentAddr => "SegmentAddr",
+        }
+    }
+
+    pub fn size(self) -> Option<u32> {
+        match self {
+            PrimitiveType::Bool | PrimitiveType::U8 | PrimitiveType::I8 => Some(1),
+            PrimitiveType::U16 | PrimitiveType::I16 => Some(2),
+            PrimitiveType::U32
+            | PrimitiveType::I32
+            | PrimitiveType::VromAddr
+            | PrimitiveType::SegmentAddr => Some(4),
         }
     }
 
@@ -54,7 +67,7 @@ impl PrimitiveType {
             PrimitiveType::I8 => fetch(1)?[0] as i8 as u32,
             PrimitiveType::U16 => fetch(2)?.read_u16::<BigEndian>().unwrap() as u32,
             PrimitiveType::I16 => fetch(2)?.read_i16::<BigEndian>().unwrap() as u32,
-            PrimitiveType::U32 | PrimitiveType::VoidPtr => {
+            PrimitiveType::U32 | PrimitiveType::VromAddr | PrimitiveType::SegmentAddr => {
                 fetch(4)?.read_u32::<BigEndian>().unwrap()
             }
             PrimitiveType::I32 => fetch(4)?.read_i32::<BigEndian>().unwrap() as u32,
@@ -87,7 +100,10 @@ pub(super) fn dump_primitive<'scope>(
             PrimitiveType::I32 => {
                 print!("{}", fetch(4)?.read_i32::<BigEndian>().unwrap())
             }
-            PrimitiveType::VoidPtr => {
+            PrimitiveType::VromAddr => {
+                print!("{:?}", VromAddr(fetch(4)?.read_u32::<BigEndian>().unwrap()))
+            }
+            PrimitiveType::SegmentAddr => {
                 print!(
                     "{:?}",
                     SegmentAddr(fetch(4)?.read_u32::<BigEndian>().unwrap())

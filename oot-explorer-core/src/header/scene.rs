@@ -1,18 +1,21 @@
+use scoped_owner::ScopedOwner;
+
 use crate::collision::{Collision, COLLISION_PTR_DESC};
 use crate::delimited::{is_end, Delimited};
-use crate::header::actor::{Actor, ACTOR_DESC};
+use crate::fs::{LazyFileSystem, VromAddr, VROM_ADDR_DESC};
 use crate::header::scene::camera::{Camera, CAMERA_DESC};
 use crate::header::scene::elf_message::{ElfMessage, ELF_MESSAGE_DESC};
 use crate::header::scene::global_object::{GlobalObject, GLOBAL_OBJECT_DESC};
-use crate::header::scene::room_list_entry::{RoomListEntry, ROOM_LIST_ENTRY_DESC};
 use crate::header::scene::type_::{SceneHeaderType, SCENE_HEADER_TYPE_DESC};
+use crate::header::{Actor, AlternateHeadersHeader, ACTOR_DESC, ALTERNATE_HEADERS_HEADER_DESC};
 use crate::reflect::primitive::{BOOL_DESC, I16_DESC, U16_DESC, U32_DESC, U8_DESC};
+use crate::reflect::sourced::RangeSourced;
+use crate::room::Room;
 use crate::scene::{Lighting, LIGHTING_DESC};
 
 pub mod camera;
 pub mod elf_message;
 pub mod global_object;
-pub mod room_list_entry;
 pub mod type_;
 
 compile_interfaces! {
@@ -45,6 +48,11 @@ compile_interfaces! {
 
     struct RoomListHeader {
         struct RoomListEntry[u8 @1]* room_list @4;
+    }
+
+    struct RoomListEntry {
+        VromAddr start @0;
+        VromAddr end @4;
     }
 
     struct EntranceListHeader {
@@ -112,11 +120,6 @@ compile_interfaces! {
         u8 music @7;
     }
 
-    struct AlternateHeadersHeader {
-        // TODO: Type this.
-        u32 ptr @4;
-    }
-
     struct CameraAndWorldMapHeader {
         Camera camera @1;
         u8 world_map_location @7;
@@ -126,5 +129,19 @@ compile_interfaces! {
 impl<'scope> Delimited for SceneHeader<'scope> {
     fn is_end(&self) -> bool {
         self.discriminant() == SceneHeaderType::END
+    }
+}
+
+impl<'scope> RoomListEntry<'scope> {
+    pub fn room(
+        self,
+        scope: &'scope ScopedOwner,
+        fs: &mut LazyFileSystem<'scope>,
+    ) -> RangeSourced<Room<'scope>> {
+        let vrom_range = self.start()..self.end();
+        RangeSourced::new(
+            vrom_range.clone(),
+            Room::new(fs.get_virtual_slice_or_die(scope, vrom_range)),
+        )
     }
 }

@@ -1,7 +1,6 @@
 use oot_explorer_core::fs::LazyFileSystem;
 use oot_explorer_core::gbi::DisplayList;
-use oot_explorer_core::header::room::variant::mesh::MeshHeader;
-use oot_explorer_core::header::room::variant::RoomHeaderVariant;
+use oot_explorer_core::header::room::{MeshHeader, RoomHeaderVariant};
 use oot_explorer_core::header::scene::SceneHeaderVariant;
 use oot_explorer_core::mesh::{Background, JfifMeshVariant, MeshVariant, SimpleMeshEntry};
 use oot_explorer_core::reflect::sourced::RangeSourced;
@@ -94,7 +93,6 @@ fn examine_scene<'a>(
         ctx
     };
 
-    // oot_explorer_core::reflect::dump_struct(scope, fs, &ctx, 0, &scene);
     oot_explorer_core::reflect::dump(
         scope,
         fs,
@@ -109,13 +107,8 @@ fn examine_scene<'a>(
         match header.variant() {
             SceneHeaderVariant::RoomList(header) => {
                 for (room_index, room_list_entry) in header.room_list(&ctx).iter().enumerate() {
-                    examine_room(
-                        &ctx,
-                        dlist_interp,
-                        scene_index,
-                        room_index,
-                        room_list_entry.room(scope, fs),
-                    );
+                    let room = room_list_entry.room(scope, fs);
+                    examine_room(scope, fs, &ctx, dlist_interp, scene_index, room_index, room);
                 }
             }
             _ => (),
@@ -124,19 +117,32 @@ fn examine_scene<'a>(
 }
 
 fn examine_room<'a>(
+    scope: &'a ScopedOwner,
+    fs: &mut LazyFileSystem<'a>,
     ctx: &SegmentCtx<'a>,
     dlist_interp: &mut DisplayListInterpreter,
     scene_index: usize,
     room_index: usize,
-    room: Room<'a>,
+    room: RangeSourced<Room<'a>>,
 ) {
     let ctx = {
         let mut ctx = ctx.clone();
         ctx.set(Segment::ROOM, room.data(), room.vrom_range());
         ctx
     };
+
+    oot_explorer_core::reflect::dump(
+        scope,
+        fs,
+        &ctx,
+        0,
+        oot_explorer_core::room::ROOM_DESC,
+        room.addr(),
+    );
+    println!();
+
     for header in room.headers() {
-        match header {
+        match header.variant() {
             RoomHeaderVariant::Mesh(header) => {
                 enumerate_meshes(
                     &ctx,
@@ -191,7 +197,7 @@ fn enumerate_meshes<'a, F, G>(
                     "scene {}, room {}: unmapped segment for display list at {:?}",
                     scene_index,
                     room_index,
-                    entry.opaque_display_list_ptr().unwrap(),
+                    entry.opaque_display_list_ptr().non_null().unwrap(),
                 )
             }
         }
@@ -203,7 +209,7 @@ fn enumerate_meshes<'a, F, G>(
                     "scene {}, room {}: unmapped segment for display list at {:?}",
                     scene_index,
                     room_index,
-                    entry.translucent_display_list_ptr().unwrap(),
+                    entry.translucent_display_list_ptr().non_null().unwrap(),
                 )
             }
         }
@@ -219,10 +225,7 @@ fn enumerate_meshes<'a, F, G>(
                 g(single.background());
             }
             JfifMeshVariant::Multiple(multiple) => {
-                multiple
-                    .mesh_entries(ctx)
-                    .iter()
-                    .for_each(handle_simple_mesh_entry);
+                handle_simple_mesh_entry(multiple.mesh_entry(ctx));
                 for entry in multiple.background_entries(ctx) {
                     g(entry.background());
                 }
@@ -238,7 +241,7 @@ fn enumerate_meshes<'a, F, G>(
                             "scene {}, room {}: unmapped segment for display list at {:?}",
                             scene_index,
                             room_index,
-                            entry.opaque_display_list_ptr().unwrap(),
+                            entry.opaque_display_list_ptr().non_null().unwrap(),
                         )
                     }
                 }
@@ -250,7 +253,7 @@ fn enumerate_meshes<'a, F, G>(
                             "scene {}, room {}: unmapped segment for display list at {:?}",
                             scene_index,
                             room_index,
-                            entry.translucent_display_list_ptr().unwrap(),
+                            entry.translucent_display_list_ptr().non_null().unwrap(),
                         )
                     }
                 }

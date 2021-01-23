@@ -1,53 +1,93 @@
-use crate::header::alternate::AlternateHeadersHeader;
-use crate::header::room::type_::RoomHeaderType;
-use crate::header::room::variant::actor::ActorListHeader;
-use crate::header::room::variant::behavior::RoomBehaviorHeader;
-use crate::header::room::variant::mesh::MeshHeader;
-use crate::header::room::variant::object::ObjectListHeader;
-use crate::header::room::variant::skybox::RoomSkyboxHeader;
-use crate::header::room::variant::sound::RoomSoundHeader;
-use crate::header::room::variant::time::TimeHeader;
-use crate::header::room::variant::wind::WindHeader;
-use crate::header::room::variant::RoomHeaderVariant;
+use crate::delimited::{is_end, Delimited};
+use crate::header::room::type_::{RoomHeaderType, ROOM_HEADER_TYPE_DESC};
+use crate::header::{Actor, AlternateHeadersHeader, ACTOR_DESC, ALTERNATE_HEADERS_HEADER_DESC};
+use crate::mesh::{Mesh, MESH_PTR_DESC};
+use crate::object::{ObjectId, OBJECT_ID_DESC};
+use crate::reflect::primitive::{BOOL_DESC, I8_DESC, U16_DESC, U8_DESC};
 
-pub mod iter;
 pub mod type_;
-pub mod variant;
 
-#[derive(Clone, Copy)]
-pub struct RoomHeader<'a> {
-    data: &'a [u8],
+compile_interfaces! {
+    #[size(8)]
+    #[is_end(|scope, fs, addr| is_end::<RoomHeader>(scope, fs, addr))]
+    union RoomHeader: RoomHeaderType @0 {
+        struct ActorListHeader actor_list #RoomHeaderType::ACTOR_LIST;
+        struct WindHeader wind #RoomHeaderType::WIND;
+        struct BehaviorHeader behavior #RoomHeaderType::BEHAVIOR;
+        struct MeshHeader mesh #RoomHeaderType::MESH;
+        struct ObjectListHeader object_list #RoomHeaderType::OBJECT_LIST;
+        struct TimeHeader time #RoomHeaderType::TIME;
+        struct RoomSkyboxHeader skybox #RoomHeaderType::SKYBOX;
+        struct EndHeader end #RoomHeaderType::END;
+        struct RoomSoundHeader sound #RoomHeaderType::SOUND;
+        struct AlternateHeadersHeader alternate_headers #RoomHeaderType::ALTERNATE_HEADERS;
+    }
+
+    struct ActorListHeader {
+        struct Actor[u8 @1]* actor_list @4;
+    }
+
+    struct WindHeader {
+        i8 west @4;
+        i8 up @5;
+        i8 south @6;
+        u8 strength @7;
+    }
+
+    struct BehaviorHeader {
+        // Affects Sun's Song, backflipping with A.
+        u8 x @1;
+        u8 flags @6;
+        u8 idle_animation_or_heat @7;
+    }
+
+    struct MeshHeader {
+        struct Mesh* mesh @4;
+    }
+
+    struct ObjectListHeader {
+        ObjectId[u8 @1]* objects @4;
+    }
+
+    struct TimeHeader {
+        u16 raw_time_override @4;
+        i8 time_speed @6;
+    }
+
+    struct RoomSkyboxHeader {
+        bool disable_sky @4;
+        bool disable_sun_moon @5;
+    }
+
+    struct EndHeader {}
+
+    struct RoomSoundHeader {
+        u8 echo @7;
+    }
 }
 
-impl<'a> RoomHeader<'a> {
-    pub const SIZE: usize = 8;
+impl<'scope> Delimited for RoomHeader<'scope> {
+    fn is_end(&self) -> bool {
+        self.discriminant() == RoomHeaderType::END
+    }
+}
 
-    pub fn new(data: &'a [u8]) -> RoomHeader<'a> {
-        RoomHeader { data }
+impl<'scope> BehaviorHeader<'scope> {
+    // TODO: Codegen for bitfields.
+    pub fn disable_warp_songs(self) -> u8 {
+        self.flags() >> 4
     }
 
-    pub fn type_(self) -> RoomHeaderType {
-        RoomHeaderType(self.data[0])
+    pub fn show_invisible_actors(self) -> bool {
+        self.flags() & 1 == 1
     }
+}
 
-    pub fn variant(self) -> RoomHeaderVariant<'a> {
-        let data = self.data;
-        match self.type_() {
-            RoomHeaderType::ACTOR_LIST => RoomHeaderVariant::ActorList(ActorListHeader::new(data)),
-            RoomHeaderType::WIND => RoomHeaderVariant::Wind(WindHeader::new(data)),
-            RoomHeaderType::BEHAVIOR => RoomHeaderVariant::Behavior(RoomBehaviorHeader::new(data)),
-            RoomHeaderType::MESH => RoomHeaderVariant::Mesh(MeshHeader::new(data)),
-            RoomHeaderType::OBJECT_LIST => {
-                RoomHeaderVariant::ObjectList(ObjectListHeader::new(data))
-            }
-            RoomHeaderType::TIME => RoomHeaderVariant::Time(TimeHeader::new(data)),
-            RoomHeaderType::SKYBOX => RoomHeaderVariant::Skybox(RoomSkyboxHeader::new(data)),
-            RoomHeaderType::END => RoomHeaderVariant::End,
-            RoomHeaderType::SOUND => RoomHeaderVariant::Sound(RoomSoundHeader::new(data)),
-            RoomHeaderType::ALTERNATE_HEADERS => {
-                RoomHeaderVariant::AlternateHeaders(AlternateHeadersHeader::new(data))
-            }
-            type_ => panic!("unexpected room header type: 0x{:02x}", type_.0),
+impl<'scope> TimeHeader<'scope> {
+    pub fn time_override(self) -> Option<u16> {
+        match self.raw_time_override() {
+            0xffff => None,
+            time => Some(time),
         }
     }
 }

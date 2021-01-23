@@ -3,8 +3,14 @@ use std::fmt::{self, Debug};
 use std::ops::{Add, AddAssign, Range, Sub, SubAssign};
 use thiserror::Error;
 
+use crate::reflect::instantiate::Instantiate;
+use crate::reflect::primitive::PrimitiveType;
+use crate::reflect::sized::ReflectSized;
+use crate::reflect::type_::TypeDescriptor;
 use crate::rom::{Rom, RomAddr};
 use crate::yaz;
+
+pub const VROM_ADDR_DESC: TypeDescriptor = TypeDescriptor::Primitive(PrimitiveType::VromAddr);
 
 /// An address in VROM.
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -47,6 +53,16 @@ impl SubAssign<u32> for VromAddr {
     fn sub_assign(&mut self, rhs: u32) {
         self.0 -= rhs;
     }
+}
+
+impl<'scope> Instantiate<'scope> for VromAddr {
+    fn new(data: &'scope [u8]) -> Self {
+        VromAddr(<u32 as Instantiate>::new(data))
+    }
+}
+
+impl ReflectSized for VromAddr {
+    const SIZE: usize = 4;
 }
 
 #[derive(Clone)]

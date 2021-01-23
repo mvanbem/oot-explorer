@@ -1,5 +1,5 @@
 use oot_explorer_core::fs::LazyFileSystem;
-use oot_explorer_core::header::room::variant::RoomHeaderVariant;
+use oot_explorer_core::header::room::RoomHeaderVariant;
 use oot_explorer_core::header::scene::SceneHeaderVariant;
 use oot_explorer_core::mesh::{
     Background, ClippedMeshEntry, JfifMeshVariant, MeshVariant, SimpleMeshEntry,
@@ -196,7 +196,7 @@ fn examine_room<'a>(
     _scope: &'a ScopedOwner,
     _fs: &mut LazyFileSystem<'a>,
     scene: RangeSourced<Scene<'a>>,
-    room: Room<'a>,
+    room: RangeSourced<Room<'a>>,
     dlist_interp: &mut DisplayListInterpreter,
     backgrounds: &mut Vec<String>,
 ) {
@@ -254,7 +254,7 @@ fn examine_room<'a>(
     };
 
     for header in room.headers() {
-        if let RoomHeaderVariant::Mesh(header) = header {
+        if let RoomHeaderVariant::Mesh(header) = header.variant() {
             match header.mesh(&cpu_ctx).variant() {
                 MeshVariant::Simple(mesh) => {
                     for entry in mesh.entries(&cpu_ctx) {
@@ -267,9 +267,7 @@ fn examine_room<'a>(
                         backgrounds.push(background_to_string(mesh.background()));
                     }
                     JfifMeshVariant::Multiple(mesh) => {
-                        for entry in mesh.mesh_entries(&cpu_ctx) {
-                            handle_simple_mesh_entry(dlist_interp, entry);
-                        }
+                        handle_simple_mesh_entry(dlist_interp, mesh.mesh_entry(&cpu_ctx));
                         for entry in mesh.background_entries(&cpu_ctx) {
                             backgrounds.push(background_to_string(entry.background()));
                         }

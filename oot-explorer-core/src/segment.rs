@@ -1,13 +1,14 @@
 use crate::fs::VromAddr;
 use crate::reflect::instantiate::Instantiate;
 use crate::reflect::primitive::PrimitiveType;
+use crate::reflect::sized::ReflectSized;
 use crate::reflect::type_::TypeDescriptor;
 use std::collections::HashMap;
 use std::fmt::{self, Debug, Formatter};
 use std::ops::{Add, Range, Sub};
 use thiserror::Error;
 
-pub const SEGMENT_ADDR_DESC: TypeDescriptor = TypeDescriptor::Primitive(PrimitiveType::VoidPtr);
+pub const SEGMENT_ADDR_DESC: TypeDescriptor = TypeDescriptor::Primitive(PrimitiveType::SegmentAddr);
 
 /// A segmented address.
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
@@ -35,6 +36,14 @@ impl SegmentAddr {
     pub fn offset(self) -> u32 {
         self.0 & 0x00ff_ffff
     }
+
+    pub fn non_null(self) -> Option<SegmentAddr> {
+        if self.0 == 0 {
+            None
+        } else {
+            Some(self)
+        }
+    }
 }
 
 impl Add<u32> for SegmentAddr {
@@ -60,6 +69,11 @@ impl<'scope> Instantiate<'scope> for SegmentAddr {
     fn new(data: &'scope [u8]) -> Self {
         SegmentAddr(<u32 as Instantiate>::new(data))
     }
+}
+
+impl ReflectSized for SegmentAddr {
+    const SIZE: usize = 4;
+    const ALIGN_BITS: u32 = 2;
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

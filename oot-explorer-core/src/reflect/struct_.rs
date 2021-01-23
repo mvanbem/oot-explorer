@@ -80,6 +80,21 @@ pub(super) fn dump_union<'scope>(
         .collect::<String>();
 
     println!("{} {{", desc.name);
+    dump_union_body(scope, fs, segment_ctx, indent_level + 1, desc, addr);
+    print!("{}}}", indent);
+}
+
+fn dump_union_body<'scope>(
+    scope: &'scope ScopedOwner,
+    fs: &mut LazyFileSystem<'scope>,
+    segment_ctx: &SegmentCtx<'scope>,
+    indent_level: usize,
+    desc: &'static UnionDescriptor,
+    addr: VromAddr,
+) {
+    let indent = std::iter::repeat(' ')
+        .take(4 * indent_level)
+        .collect::<String>();
 
     let discriminant_addr = addr + desc.discriminant_offset;
     if let Some(discriminant) = desc
@@ -87,16 +102,16 @@ pub(super) fn dump_union<'scope>(
         .read_as_u32(scope, fs, discriminant_addr)
     {
         print!(
-            "{}    (0x{:08x}) discriminant: {} = ",
+            "{}(0x{:08x}) discriminant: {} = ",
             indent,
-            addr.0,
+            discriminant_addr.0,
             desc.discriminant_desc.name(),
         );
         dump(
             scope,
             fs,
             segment_ctx,
-            indent_level + 1,
+            indent_level,
             desc.discriminant_desc,
             discriminant_addr,
         );
@@ -109,20 +124,25 @@ pub(super) fn dump_union<'scope>(
             Ok(index) => match desc.variants[index].1 {
                 TypeDescriptor::Struct(desc) => {
                     for field in desc.fields {
-                        dump_field(scope, fs, segment_ctx, indent_level + 1, field, addr);
+                        dump_field(scope, fs, segment_ctx, indent_level, field, addr);
                     }
                 }
-                _ => panic!("union variant is not a struct (this is fine, but not implemented)"),
+                TypeDescriptor::Union(desc) => {
+                    dump_union_body(scope, fs, segment_ctx, indent_level, desc, addr);
+                }
+                _ => unimplemented!(
+                    "variant `{}` of union `{}` is not a struct or union",
+                    desc.variants[index].1.name(),
+                    desc.name,
+                ),
             },
             Err(_) => {
-                println!("{}    (unknown variant)", indent);
+                println!("{}(unknown variant)", indent);
             }
         }
     } else {
-        println!("{}    (discriminant inaccessible)", indent);
+        println!("{}(discriminant inaccessible)", indent);
     }
-
-    print!("{}}}", indent);
 }
 
 fn dump_field<'scope>(

@@ -50,6 +50,7 @@ compile_interfaces! {
         struct RoomListEntry[u8 @1]* room_list @4;
     }
 
+    #[size(0x8)]
     struct RoomListEntry {
         VromAddr start @0;
         VromAddr end @4;

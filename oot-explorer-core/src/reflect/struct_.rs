@@ -223,7 +223,14 @@ fn dump_field<'scope>(
                             dump(scope, fs, segment_ctx, indent_level + 1, field.desc, addr);
                             println!();
 
-                            addr += field.desc.size().expect("slice element has no size");
+                            addr += match field.desc.size() {
+                                Some(size) => size,
+                                None => panic!(
+                                    "slice element {} has no size, referenced from field {}",
+                                    field.desc.name(),
+                                    field.name,
+                                ),
+                            };
                         }
 
                         println!("{}]", indent)

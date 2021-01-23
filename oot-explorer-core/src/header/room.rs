@@ -1,13 +1,23 @@
 use crate::delimited::{is_end, Delimited};
-use crate::header::room::type_::{RoomHeaderType, ROOM_HEADER_TYPE_DESC};
 use crate::header::{Actor, AlternateHeadersHeader, ACTOR_DESC, ALTERNATE_HEADERS_HEADER_DESC};
 use crate::mesh::{Mesh, MESH_PTR_DESC};
 use crate::object::{ObjectId, OBJECT_ID_DESC};
 use crate::reflect::primitive::{BOOL_DESC, I8_DESC, U16_DESC, U8_DESC};
 
-pub mod type_;
-
 compile_interfaces! {
+    enum RoomHeaderType: u8 {
+        ACTOR_LIST = 0x01;
+        WIND = 0x05;
+        BEHAVIOR = 0x08;
+        MESH = 0x0a;
+        OBJECT_LIST = 0x0b;
+        TIME = 0x10;
+        SKYBOX = 0x12;
+        END = 0x14;
+        SOUND = 0x16;
+        ALTERNATE_HEADERS = 0x18;
+    }
+
     #[size(8)]
     #[is_end(|scope, fs, addr| is_end::<RoomHeader>(scope, fs, addr))]
     union RoomHeader: RoomHeaderType @0 {

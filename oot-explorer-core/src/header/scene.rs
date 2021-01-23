@@ -3,22 +3,30 @@ use scoped_owner::ScopedOwner;
 use crate::collision::{Collision, COLLISION_PTR_DESC};
 use crate::delimited::{is_end, Delimited};
 use crate::fs::{LazyFileSystem, VromAddr, VROM_ADDR_DESC};
-use crate::header::scene::camera::{Camera, CAMERA_DESC};
-use crate::header::scene::elf_message::{ElfMessage, ELF_MESSAGE_DESC};
-use crate::header::scene::global_object::{GlobalObject, GLOBAL_OBJECT_DESC};
-use crate::header::scene::type_::{SceneHeaderType, SCENE_HEADER_TYPE_DESC};
 use crate::header::{Actor, AlternateHeadersHeader, ACTOR_DESC, ALTERNATE_HEADERS_HEADER_DESC};
 use crate::reflect::primitive::{BOOL_DESC, I16_DESC, U16_DESC, U32_DESC, U8_DESC};
 use crate::reflect::sourced::RangeSourced;
 use crate::room::Room;
 use crate::scene::{Lighting, LIGHTING_DESC};
 
-pub mod camera;
-pub mod elf_message;
-pub mod global_object;
-pub mod type_;
-
 compile_interfaces! {
+    enum SceneHeaderType: u8 {
+        START_POSITIONS = 0x00;
+        COLLISION = 0x03;
+        ROOM_LIST = 0x04;
+        ENTRANCE_LIST = 0x06;
+        SPECIAL_OBJECTS = 0x07;
+        PATHWAYS = 0x0d;
+        TRANSITION_ACTORS = 0x0e;
+        LIGHTING = 0x0f;
+        SKYBOX = 0x11;
+        EXIT_LIST = 0x13;
+        END = 0x14;
+        SOUND = 0x15;
+        ALTERNATE_HEADERS = 0x18;
+        CAMERA_AND_WORLD_MAP = 0x19;
+    }
+
     #[size(8)]
     #[is_end(|scope, fs, addr| is_end::<SceneHeader>(scope, fs, addr))]
     union SceneHeader: SceneHeaderType @0 {
@@ -69,6 +77,18 @@ compile_interfaces! {
     struct SpecialObjectsHeader {
         ElfMessage elf_message @1;
         GlobalObject global_object @6;
+    }
+
+    enum ElfMessage: u8 {
+        NONE = 0x00;
+        FIELD = 0x01;
+        YDAN = 0x02;
+    }
+
+    enum GlobalObject: u16 {
+        NONE = 0x0000;
+        FIELD = 0x0002;
+        DANGEON = 0x0003;
     }
 
     struct PathwaysHeader {
@@ -124,6 +144,15 @@ compile_interfaces! {
     struct CameraAndWorldMapHeader {
         Camera camera @1;
         u8 world_map_location @7;
+    }
+
+    enum Camera: u8 {
+        FREE = 0x00;
+        FIXED_WITH_ALTERNATE = 0x10;
+        ROTATE_WITH_ALTERNATE = 0x20;
+        FIXED = 0x30;
+        ROTATE = 0x40;
+        SHOOTING_GALLERY = 0x50;
     }
 }
 

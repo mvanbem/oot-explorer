@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 #![cfg_attr(feature = "trace_macros", feature(trace_macros))]
 
 #[cfg(feature = "trace_macros")]

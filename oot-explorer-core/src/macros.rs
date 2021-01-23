@@ -1037,6 +1037,111 @@ macro_rules! compile_interfaces {
     (@primitive_type_literal u32) => { $crate::reflect::primitive::PrimitiveType::U32 };
     (@primitive_type_literal i32) => { $crate::reflect::primitive::PrimitiveType::I32 };
 
+    // Parse the start of an enum.
+    (
+        // Parse state.
+        @parse Init { size: (None) is_end: (None) }
+
+        // Item to parse.
+        enum $name:ident: $underlying:ident {
+            $($body:tt)*
+        }
+
+        // Remainder of input.
+        $($tail:tt)*
+    ) => {
+        compile_interfaces! {
+            @parse Enum { name: $name underlying: $underlying entries: [] }
+            { $($body)* }
+            $($tail)*
+        }
+    };
+
+    // Parse an enum entry.
+    (
+        // Parse state.
+        @parse Enum { name: $name:ident underlying: $underlying:ident entries: [$($entry:tt)*] }
+
+        // Item to parse.
+        {
+            $entry_name:ident = $entry_value:expr;
+            $($body:tt)*
+        }
+
+        // Remainder of input.
+        $($tail:tt)*
+    ) => {
+        compile_interfaces! {
+            @parse Enum {
+                name: $name
+                underlying: $underlying
+                entries: [
+                    $($entry)*
+                    // New entry.
+                    { name: $entry_name value: $entry_value }
+                ]
+            }
+            { $($body)* }
+            $($tail)*
+        }
+    };
+
+    // Parse the end of an enum.
+    (
+        // Parse state.
+        @parse Enum {
+            name: $name:ident
+            underlying: $underlying:ident
+            entries: [$({ name: $entry_name:ident value: $entry_value:expr })*]
+        }
+
+        // Item to parse.
+        { /* empty */ }
+
+        // Remainder of input.
+        $($tail:tt)*
+    ) => {
+        // Generate the reflection table.
+        ::paste::paste! {
+            pub const [<$name:snake:upper _DESC>]: $crate::reflect::type_::TypeDescriptor =
+                $crate::reflect::type_::TypeDescriptor::Enum(
+                    &$crate::reflect::enum_::EnumDescriptor {
+                        name: stringify!($name),
+                        underlying: compile_interfaces!(@primitive_type_literal $underlying),
+                        values: &[$(
+                            ($entry_value, stringify!($entry_name)),
+                        )*],
+                    });
+        }
+
+        // Generate the Rust type.
+
+        #[derive(Clone, Copy, Eq, PartialEq)]
+        pub struct $name(pub $underlying);
+
+        impl $name {
+            $(
+                pub const $entry_name: $name = $name($entry_value);
+            )*
+
+            pub const fn to_u32(self) -> u32 {
+                self.0 as u32
+            }
+        }
+
+        impl<'scope> $crate::reflect::instantiate::Instantiate<'scope> for $name {
+            fn new(data: &'scope [u8]) -> Self {
+                $name(<$underlying as $crate::reflect::instantiate::Instantiate>::new(data))
+            }
+        }
+
+        impl $crate::reflect::sized::ReflectSized for $name {
+            const SIZE: usize = <$underlying as $crate::reflect::sized::ReflectSized>::SIZE;
+        }
+
+        compile_interfaces! { $($tail)* }
+    };
+
     // Catch-all handler for input that didn't match anything.
     (@ $($args:tt)*) => {
         compile_error!(concat!(

@@ -1,0 +1,1 @@
+initSidebarItems({"constant":[["ACTOR_DESC",""],["ALTERNATE_HEADERS_HEADER_DESC",""]],"mod":[["room",""],["scene",""]],"struct":[["Actor",""],["AlternateHeadersHeader",""]]});

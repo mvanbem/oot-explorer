@@ -1,0 +1,360 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source to the Rust file `oot-explorer-core\src\header\scene.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>scene.rs.html -- source</title><link rel="stylesheet" type="text/css" href="../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../../ayu.css" disabled ><script src="../../../storage.js"></script><noscript><link rel="stylesheet" href="../../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../../favicon.svg">
+<link rel="alternate icon" type="image/png" href="../../../favicon-16x16.png">
+<link rel="alternate icon" type="image/png" href="../../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu">&#9776;</div><a href='../../../oot_explorer_core/index.html'><div class='logo-container rust-logo'><img src='../../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!"><img src="../../../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices"></div></div><script src="../../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><span class="help-button">?</span>
+                <a id="settings-menu" href="../../../settings.html"><img src="../../../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1">  1</span>
+<span id="2">  2</span>
+<span id="3">  3</span>
+<span id="4">  4</span>
+<span id="5">  5</span>
+<span id="6">  6</span>
+<span id="7">  7</span>
+<span id="8">  8</span>
+<span id="9">  9</span>
+<span id="10"> 10</span>
+<span id="11"> 11</span>
+<span id="12"> 12</span>
+<span id="13"> 13</span>
+<span id="14"> 14</span>
+<span id="15"> 15</span>
+<span id="16"> 16</span>
+<span id="17"> 17</span>
+<span id="18"> 18</span>
+<span id="19"> 19</span>
+<span id="20"> 20</span>
+<span id="21"> 21</span>
+<span id="22"> 22</span>
+<span id="23"> 23</span>
+<span id="24"> 24</span>
+<span id="25"> 25</span>
+<span id="26"> 26</span>
+<span id="27"> 27</span>
+<span id="28"> 28</span>
+<span id="29"> 29</span>
+<span id="30"> 30</span>
+<span id="31"> 31</span>
+<span id="32"> 32</span>
+<span id="33"> 33</span>
+<span id="34"> 34</span>
+<span id="35"> 35</span>
+<span id="36"> 36</span>
+<span id="37"> 37</span>
+<span id="38"> 38</span>
+<span id="39"> 39</span>
+<span id="40"> 40</span>
+<span id="41"> 41</span>
+<span id="42"> 42</span>
+<span id="43"> 43</span>
+<span id="44"> 44</span>
+<span id="45"> 45</span>
+<span id="46"> 46</span>
+<span id="47"> 47</span>
+<span id="48"> 48</span>
+<span id="49"> 49</span>
+<span id="50"> 50</span>
+<span id="51"> 51</span>
+<span id="52"> 52</span>
+<span id="53"> 53</span>
+<span id="54"> 54</span>
+<span id="55"> 55</span>
+<span id="56"> 56</span>
+<span id="57"> 57</span>
+<span id="58"> 58</span>
+<span id="59"> 59</span>
+<span id="60"> 60</span>
+<span id="61"> 61</span>
+<span id="62"> 62</span>
+<span id="63"> 63</span>
+<span id="64"> 64</span>
+<span id="65"> 65</span>
+<span id="66"> 66</span>
+<span id="67"> 67</span>
+<span id="68"> 68</span>
+<span id="69"> 69</span>
+<span id="70"> 70</span>
+<span id="71"> 71</span>
+<span id="72"> 72</span>
+<span id="73"> 73</span>
+<span id="74"> 74</span>
+<span id="75"> 75</span>
+<span id="76"> 76</span>
+<span id="77"> 77</span>
+<span id="78"> 78</span>
+<span id="79"> 79</span>
+<span id="80"> 80</span>
+<span id="81"> 81</span>
+<span id="82"> 82</span>
+<span id="83"> 83</span>
+<span id="84"> 84</span>
+<span id="85"> 85</span>
+<span id="86"> 86</span>
+<span id="87"> 87</span>
+<span id="88"> 88</span>
+<span id="89"> 89</span>
+<span id="90"> 90</span>
+<span id="91"> 91</span>
+<span id="92"> 92</span>
+<span id="93"> 93</span>
+<span id="94"> 94</span>
+<span id="95"> 95</span>
+<span id="96"> 96</span>
+<span id="97"> 97</span>
+<span id="98"> 98</span>
+<span id="99"> 99</span>
+<span id="100">100</span>
+<span id="101">101</span>
+<span id="102">102</span>
+<span id="103">103</span>
+<span id="104">104</span>
+<span id="105">105</span>
+<span id="106">106</span>
+<span id="107">107</span>
+<span id="108">108</span>
+<span id="109">109</span>
+<span id="110">110</span>
+<span id="111">111</span>
+<span id="112">112</span>
+<span id="113">113</span>
+<span id="114">114</span>
+<span id="115">115</span>
+<span id="116">116</span>
+<span id="117">117</span>
+<span id="118">118</span>
+<span id="119">119</span>
+<span id="120">120</span>
+<span id="121">121</span>
+<span id="122">122</span>
+<span id="123">123</span>
+<span id="124">124</span>
+<span id="125">125</span>
+<span id="126">126</span>
+<span id="127">127</span>
+<span id="128">128</span>
+<span id="129">129</span>
+<span id="130">130</span>
+<span id="131">131</span>
+<span id="132">132</span>
+<span id="133">133</span>
+<span id="134">134</span>
+<span id="135">135</span>
+<span id="136">136</span>
+<span id="137">137</span>
+<span id="138">138</span>
+<span id="139">139</span>
+<span id="140">140</span>
+<span id="141">141</span>
+<span id="142">142</span>
+<span id="143">143</span>
+<span id="144">144</span>
+<span id="145">145</span>
+<span id="146">146</span>
+<span id="147">147</span>
+<span id="148">148</span>
+<span id="149">149</span>
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
+<span id="155">155</span>
+<span id="156">156</span>
+<span id="157">157</span>
+<span id="158">158</span>
+<span id="159">159</span>
+<span id="160">160</span>
+<span id="161">161</span>
+<span id="162">162</span>
+<span id="163">163</span>
+<span id="164">164</span>
+<span id="165">165</span>
+<span id="166">166</span>
+<span id="167">167</span>
+<span id="168">168</span>
+<span id="169">169</span>
+<span id="170">170</span>
+<span id="171">171</span>
+<span id="172">172</span>
+<span id="173">173</span>
+<span id="174">174</span>
+<span id="175">175</span>
+<span id="176">176</span>
+<span id="177">177</span>
+</pre><div class="example-wrap"><pre class="rust ">
+<span class="kw">use</span> <span class="ident">scoped_owner</span>::<span class="ident">ScopedOwner</span>;
+
+<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">collision</span>::{<span class="ident">Collision</span>, <span class="ident">COLLISION_PTR_DESC</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">delimited</span>::{<span class="ident">is_end</span>, <span class="ident">Delimited</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">fs</span>::{<span class="ident">LazyFileSystem</span>, <span class="ident">VromAddr</span>, <span class="ident">VROM_ADDR_DESC</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">header</span>::{<span class="ident">Actor</span>, <span class="ident">AlternateHeadersHeader</span>, <span class="ident">ACTOR_DESC</span>, <span class="ident">ALTERNATE_HEADERS_HEADER_DESC</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">reflect</span>::<span class="ident">primitive</span>::{<span class="ident">BOOL_DESC</span>, <span class="ident">I16_DESC</span>, <span class="ident">U16_DESC</span>, <span class="ident">U32_DESC</span>, <span class="ident">U8_DESC</span>};
+<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">reflect</span>::<span class="ident">sourced</span>::<span class="ident">RangeSourced</span>;
+<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">room</span>::<span class="ident">Room</span>;
+<span class="kw">use</span> <span class="kw">crate</span>::<span class="ident">scene</span>::{<span class="ident">Lighting</span>, <span class="ident">LIGHTING_DESC</span>};
+
+<span class="macro">compile_interfaces</span><span class="macro">!</span> {
+    <span class="kw">enum</span> <span class="ident">SceneHeaderType</span>: <span class="ident">u8</span> {
+        <span class="ident">START_POSITIONS</span> <span class="op">=</span> <span class="number">0x00</span>;
+        <span class="ident">COLLISION</span> <span class="op">=</span> <span class="number">0x03</span>;
+        <span class="ident">ROOM_LIST</span> <span class="op">=</span> <span class="number">0x04</span>;
+        <span class="ident">ENTRANCE_LIST</span> <span class="op">=</span> <span class="number">0x06</span>;
+        <span class="ident">SPECIAL_OBJECTS</span> <span class="op">=</span> <span class="number">0x07</span>;
+        <span class="ident">PATHWAYS</span> <span class="op">=</span> <span class="number">0x0d</span>;
+        <span class="ident">TRANSITION_ACTORS</span> <span class="op">=</span> <span class="number">0x0e</span>;
+        <span class="ident">LIGHTING</span> <span class="op">=</span> <span class="number">0x0f</span>;
+        <span class="ident">SKYBOX</span> <span class="op">=</span> <span class="number">0x11</span>;
+        <span class="ident">EXIT_LIST</span> <span class="op">=</span> <span class="number">0x13</span>;
+        <span class="ident">END</span> <span class="op">=</span> <span class="number">0x14</span>;
+        <span class="ident">SOUND</span> <span class="op">=</span> <span class="number">0x15</span>;
+        <span class="ident">ALTERNATE_HEADERS</span> <span class="op">=</span> <span class="number">0x18</span>;
+        <span class="ident">CAMERA_AND_WORLD_MAP</span> <span class="op">=</span> <span class="number">0x19</span>;
+    }
+
+    <span class="attribute">#[<span class="ident">size</span>(<span class="number">8</span>)]</span>
+    <span class="attribute">#[<span class="ident">is_end</span>(<span class="op">|</span><span class="ident">scope</span>, <span class="ident">fs</span>, <span class="ident">addr</span><span class="op">|</span> <span class="ident">is_end</span>::<span class="op">&lt;</span><span class="ident">SceneHeader</span><span class="op">&gt;</span>(<span class="ident">scope</span>, <span class="ident">fs</span>, <span class="ident">addr</span>))]</span>
+    <span class="ident">union</span> <span class="ident">SceneHeader</span>: <span class="ident">SceneHeaderType</span> @<span class="number">0</span> {
+        <span class="kw">struct</span> <span class="ident">StartPositionsHeader</span> <span class="ident">start_positions</span> #<span class="ident">SceneHeaderType</span>::<span class="ident">START_POSITIONS</span>;
+        <span class="kw">struct</span> <span class="ident">CollisionHeader</span> <span class="ident">collision</span> #<span class="ident">SceneHeaderType</span>::<span class="ident">COLLISION</span>;
+        <span class="kw">struct</span> <span class="ident">RoomListHeader</span> <span class="ident">room_list</span> #<span class="ident">SceneHeaderType</span>::<span class="ident">ROOM_LIST</span>;
+        <span class="kw">struct</span> <span class="ident">EntranceListHeader</span> <span class="ident">entrance_list</span> #<span class="ident">SceneHeaderType</span>::<span class="ident">ENTRANCE_LIST</span>;
+        <span class="kw">struct</span> <span class="ident">SpecialObjectsHeader</span> <span class="ident">special_objects</span> #<span class="ident">SceneHeaderType</span>::<span class="ident">SPECIAL_OBJECTS</span>;
+        <span class="kw">struct</span> <span class="ident">PathwaysHeader</span> <span class="ident">pathways</span> #<span class="ident">SceneHeaderType</span>::<span class="ident">PATHWAYS</span>;
+        <span class="kw">struct</span> <span class="ident">TransitionActorsHeader</span> <span class="ident">transition_actors</span> #<span class="ident">SceneHeaderType</span>::<span class="ident">TRANSITION_ACTORS</span>;
+        <span class="kw">struct</span> <span class="ident">LightingHeader</span> <span class="ident">lighting</span> #<span class="ident">SceneHeaderType</span>::<span class="ident">LIGHTING</span>;
+        <span class="kw">struct</span> <span class="ident">SceneSkyboxHeader</span> <span class="ident">skybox</span> #<span class="ident">SceneHeaderType</span>::<span class="ident">SKYBOX</span>;
+        <span class="kw">struct</span> <span class="ident">ExitListHeader</span> <span class="ident">exit_list</span> #<span class="ident">SceneHeaderType</span>::<span class="ident">EXIT_LIST</span>;
+        <span class="kw">struct</span> <span class="ident">EndHeader</span> <span class="ident">end</span> #<span class="ident">SceneHeaderType</span>::<span class="ident">END</span>;
+        <span class="kw">struct</span> <span class="ident">SceneSoundHeader</span> <span class="ident">sound</span> #<span class="ident">SceneHeaderType</span>::<span class="ident">SOUND</span>;
+        <span class="kw">struct</span> <span class="ident">AlternateHeadersHeader</span> <span class="ident">alternate_headers</span> #<span class="ident">SceneHeaderType</span>::<span class="ident">ALTERNATE_HEADERS</span>;
+        <span class="kw">struct</span> <span class="ident">CameraAndWorldMapHeader</span> <span class="ident">camera_and_world_map</span> #<span class="ident">SceneHeaderType</span>::<span class="ident">CAMERA_AND_WORLD_MAP</span>;
+    }
+
+    <span class="kw">struct</span> <span class="ident">StartPositionsHeader</span> {
+        <span class="kw">struct</span> <span class="ident">Actor</span>[<span class="ident">u8</span> @<span class="number">1</span>]<span class="op">*</span> <span class="ident">start_positions</span> @<span class="number">4</span>;
+    }
+
+    <span class="kw">struct</span> <span class="ident">CollisionHeader</span> {
+        <span class="kw">struct</span> <span class="ident">Collision</span><span class="op">*</span> <span class="ident">ptr</span> @<span class="number">4</span>;
+    }
+
+    <span class="kw">struct</span> <span class="ident">RoomListHeader</span> {
+        <span class="kw">struct</span> <span class="ident">RoomListEntry</span>[<span class="ident">u8</span> @<span class="number">1</span>]<span class="op">*</span> <span class="ident">room_list</span> @<span class="number">4</span>;
+    }
+
+    <span class="attribute">#[<span class="ident">size</span>(<span class="number">0x8</span>)]</span>
+    <span class="kw">struct</span> <span class="ident">RoomListEntry</span> {
+        <span class="ident">VromAddr</span> <span class="ident">start</span> @<span class="number">0</span>;
+        <span class="ident">VromAddr</span> <span class="ident">end</span> @<span class="number">4</span>;
+    }
+
+    <span class="kw">struct</span> <span class="ident">EntranceListHeader</span> {
+        <span class="comment">// TODO: Type this as Entrance[?]*.</span>
+        <span class="ident">u32</span> <span class="ident">ptr</span> @<span class="number">4</span>;
+    }
+
+    <span class="kw">struct</span> <span class="ident">Entrance</span> {
+        <span class="ident">u8</span> <span class="ident">start_position</span> @<span class="number">0</span>;
+        <span class="ident">u8</span> <span class="ident">room</span> @<span class="number">1</span>;
+    }
+
+    <span class="kw">struct</span> <span class="ident">SpecialObjectsHeader</span> {
+        <span class="ident">ElfMessage</span> <span class="ident">elf_message</span> @<span class="number">1</span>;
+        <span class="ident">GlobalObject</span> <span class="ident">global_object</span> @<span class="number">6</span>;
+    }
+
+    <span class="kw">enum</span> <span class="ident">ElfMessage</span>: <span class="ident">u8</span> {
+        <span class="ident">NONE</span> <span class="op">=</span> <span class="number">0x00</span>;
+        <span class="ident">FIELD</span> <span class="op">=</span> <span class="number">0x01</span>;
+        <span class="ident">YDAN</span> <span class="op">=</span> <span class="number">0x02</span>;
+    }
+
+    <span class="kw">enum</span> <span class="ident">GlobalObject</span>: <span class="ident">u16</span> {
+        <span class="ident">NONE</span> <span class="op">=</span> <span class="number">0x0000</span>;
+        <span class="ident">FIELD</span> <span class="op">=</span> <span class="number">0x0002</span>;
+        <span class="ident">DANGEON</span> <span class="op">=</span> <span class="number">0x0003</span>;
+    }
+
+    <span class="kw">struct</span> <span class="ident">PathwaysHeader</span> {
+        <span class="comment">// TODO: Type this.</span>
+        <span class="ident">u32</span> <span class="ident">ptr</span> @<span class="number">4</span>;
+    }
+
+    <span class="kw">struct</span> <span class="ident">TransitionActorsHeader</span> {
+        <span class="kw">struct</span> <span class="ident">TransitionActor</span>[<span class="ident">u8</span> @<span class="number">1</span>]<span class="op">*</span> <span class="ident">transition_actors</span> @<span class="number">4</span>;
+    }
+
+    <span class="attribute">#[<span class="ident">size</span>(<span class="number">0x10</span>)]</span>
+    <span class="kw">struct</span> <span class="ident">TransitionActor</span> {
+        <span class="ident">u8</span> <span class="ident">room_from_front</span> @<span class="number">0</span>;
+        <span class="ident">u8</span> <span class="ident">camera_from_front</span> @<span class="number">1</span>;
+        <span class="ident">u8</span> <span class="ident">room_from_back</span> @<span class="number">2</span>;
+        <span class="ident">u8</span> <span class="ident">camera_from_back</span> @<span class="number">3</span>;
+        <span class="ident">u16</span> <span class="ident">actor_number</span> @<span class="number">4</span>;
+        <span class="ident">i16</span> <span class="ident">pos_x</span> @<span class="number">6</span>;
+        <span class="ident">i16</span> <span class="ident">pos_y</span> @<span class="number">8</span>;
+        <span class="ident">i16</span> <span class="ident">pos_z</span> @<span class="number">0xa</span>;
+        <span class="ident">i16</span> <span class="ident">rot_y</span> @<span class="number">0xc</span>;
+        <span class="ident">u16</span> <span class="ident">init</span> @<span class="number">0xe</span>;
+    }
+
+    <span class="kw">struct</span> <span class="ident">LightingHeader</span> {
+        <span class="kw">struct</span> <span class="ident">Lighting</span>[<span class="ident">u8</span> @<span class="number">1</span>]<span class="op">*</span> <span class="ident">lighting</span> @<span class="number">4</span>;
+    }
+
+    <span class="kw">struct</span> <span class="ident">SceneSkyboxHeader</span> {
+        <span class="ident">u8</span> <span class="ident">skybox</span> @<span class="number">4</span>;
+        <span class="ident">bool</span> <span class="ident">cloudy</span> @<span class="number">5</span>;
+        <span class="ident">bool</span> <span class="ident">indoor_lighting</span> @<span class="number">6</span>;
+    }
+
+    <span class="kw">struct</span> <span class="ident">ExitListHeader</span> {
+        <span class="comment">// TODO: Type this as Exit[?]*.</span>
+        <span class="ident">u32</span> <span class="ident">ptr</span> @<span class="number">4</span>;
+    }
+
+    <span class="kw">struct</span> <span class="ident">Exit</span> {
+        <span class="ident">u16</span> <span class="ident">value</span> @<span class="number">0</span>;
+    }
+
+    <span class="kw">struct</span> <span class="ident">EndHeader</span> {}
+
+    <span class="kw">struct</span> <span class="ident">SceneSoundHeader</span> {
+        <span class="ident">u8</span> <span class="ident">settings</span> @<span class="number">1</span>;
+        <span class="ident">u8</span> <span class="ident">night_sound</span> @<span class="number">6</span>;
+        <span class="ident">u8</span> <span class="ident">music</span> @<span class="number">7</span>;
+    }
+
+    <span class="kw">struct</span> <span class="ident">CameraAndWorldMapHeader</span> {
+        <span class="ident">Camera</span> <span class="ident">camera</span> @<span class="number">1</span>;
+        <span class="ident">u8</span> <span class="ident">world_map_location</span> @<span class="number">7</span>;
+    }
+
+    <span class="kw">enum</span> <span class="ident">Camera</span>: <span class="ident">u8</span> {
+        <span class="ident">FREE</span> <span class="op">=</span> <span class="number">0x00</span>;
+        <span class="ident">FIXED_WITH_ALTERNATE</span> <span class="op">=</span> <span class="number">0x10</span>;
+        <span class="ident">ROTATE_WITH_ALTERNATE</span> <span class="op">=</span> <span class="number">0x20</span>;
+        <span class="ident">FIXED</span> <span class="op">=</span> <span class="number">0x30</span>;
+        <span class="ident">ROTATE</span> <span class="op">=</span> <span class="number">0x40</span>;
+        <span class="ident">SHOOTING_GALLERY</span> <span class="op">=</span> <span class="number">0x50</span>;
+    }
+}
+
+<span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;scope</span><span class="op">&gt;</span> <span class="ident">Delimited</span> <span class="kw">for</span> <span class="ident">SceneHeader</span><span class="op">&lt;</span><span class="lifetime">&#39;scope</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">is_end</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">bool</span> {
+        <span class="self">self</span>.<span class="ident">discriminant</span>() <span class="op">=</span><span class="op">=</span> <span class="ident">SceneHeaderType</span>::<span class="ident">END</span>
+    }
+}
+
+<span class="kw">impl</span><span class="op">&lt;</span><span class="lifetime">&#39;scope</span><span class="op">&gt;</span> <span class="ident">RoomListEntry</span><span class="op">&lt;</span><span class="lifetime">&#39;scope</span><span class="op">&gt;</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">room</span>(
+        <span class="self">self</span>,
+        <span class="ident">scope</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;scope</span> <span class="ident">ScopedOwner</span>,
+        <span class="ident">fs</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">LazyFileSystem</span><span class="op">&lt;</span><span class="lifetime">&#39;scope</span><span class="op">&gt;</span>,
+    ) <span class="op">-</span><span class="op">&gt;</span> <span class="ident">RangeSourced</span><span class="op">&lt;</span><span class="ident">Room</span><span class="op">&lt;</span><span class="lifetime">&#39;scope</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="kw">let</span> <span class="ident">vrom_range</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">start</span>()..<span class="self">self</span>.<span class="ident">end</span>();
+        <span class="ident">RangeSourced</span>::<span class="ident">new</span>(
+            <span class="ident">vrom_range</span>.<span class="ident">clone</span>(),
+            <span class="ident">Room</span>::<span class="ident">new</span>(<span class="ident">fs</span>.<span class="ident">get_virtual_slice_or_die</span>(<span class="ident">scope</span>, <span class="ident">vrom_range</span>)),
+        )
+    }
+}
+</pre></div>
+</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../../";window.currentCrate = "oot_explorer_core";</script><script src="../../../main.js"></script><script src="../../../source-script.js"></script><script src="../../../source-files.js"></script><script defer src="../../../search-index.js"></script></body></html>

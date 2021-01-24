@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["Iter",""],["Slice","A contiguous slice of structs of known size."]]});

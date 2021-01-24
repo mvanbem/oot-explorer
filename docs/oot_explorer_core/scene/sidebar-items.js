@@ -1,0 +1,1 @@
+initSidebarItems({"constant":[["LIGHTING_DESC",""],["SCENE_DESC",""]],"struct":[["Lighting",""],["Scene",""]]});

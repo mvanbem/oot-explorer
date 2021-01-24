@@ -1,0 +1,1 @@
+initSidebarItems({"constant":[["FILE_TABLE_ROM_ADDR",""],["SCENE_TABLE_COUNT",""],["SCENE_TABLE_FILE_INDEX",""],["SCENE_TABLE_OFFSET",""]],"fn":[["get_scene_table",""]],"struct":[["SceneTableEntry",""]]});

@@ -1,0 +1,172 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source to the Rust file `deref-map\src\lib.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>lib.rs.html -- source</title><link rel="stylesheet" type="text/css" href="../../normalize.css"><link rel="stylesheet" type="text/css" href="../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../light.css"  id="themeStyle"><link rel="stylesheet" type="text/css" href="../../dark.css" disabled ><link rel="stylesheet" type="text/css" href="../../ayu.css" disabled ><script src="../../storage.js"></script><noscript><link rel="stylesheet" href="../../noscript.css"></noscript><link rel="icon" type="image/svg+xml" href="../../favicon.svg">
+<link rel="alternate icon" type="image/png" href="../../favicon-16x16.png">
+<link rel="alternate icon" type="image/png" href="../../favicon-32x32.png"><style type="text/css">#crate-search{background-image:url("../../down-arrow.svg");}</style></head><body class="rustdoc source"><!--[if lte IE 8]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="sidebar-menu">&#9776;</div><a href='../../deref_map/index.html'><div class='logo-container rust-logo'><img src='../../rust-logo.png' alt='logo'></div></a></nav><div class="theme-picker"><button id="theme-picker" aria-label="Pick another theme!"><img src="../../brush.svg" width="18" alt="Pick another theme!"></button><div id="theme-choices"></div></div><script src="../../theme.js"></script><nav class="sub"><form class="search-form"><div class="search-container"><div><select id="crate-search"><option value="All crates">All crates</option></select><input class="search-input" name="search" disabled autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><span class="help-button">?</span>
+                <a id="settings-menu" href="../../settings.html"><img src="../../wheel.svg" width="18" alt="Change settings"></a></div></form></nav><section id="main" class="content"><pre class="line-numbers"><span id="1"> 1</span>
+<span id="2"> 2</span>
+<span id="3"> 3</span>
+<span id="4"> 4</span>
+<span id="5"> 5</span>
+<span id="6"> 6</span>
+<span id="7"> 7</span>
+<span id="8"> 8</span>
+<span id="9"> 9</span>
+<span id="10">10</span>
+<span id="11">11</span>
+<span id="12">12</span>
+<span id="13">13</span>
+<span id="14">14</span>
+<span id="15">15</span>
+<span id="16">16</span>
+<span id="17">17</span>
+<span id="18">18</span>
+<span id="19">19</span>
+<span id="20">20</span>
+<span id="21">21</span>
+<span id="22">22</span>
+<span id="23">23</span>
+<span id="24">24</span>
+<span id="25">25</span>
+<span id="26">26</span>
+<span id="27">27</span>
+<span id="28">28</span>
+<span id="29">29</span>
+<span id="30">30</span>
+<span id="31">31</span>
+<span id="32">32</span>
+<span id="33">33</span>
+<span id="34">34</span>
+<span id="35">35</span>
+<span id="36">36</span>
+<span id="37">37</span>
+<span id="38">38</span>
+<span id="39">39</span>
+<span id="40">40</span>
+<span id="41">41</span>
+<span id="42">42</span>
+<span id="43">43</span>
+<span id="44">44</span>
+<span id="45">45</span>
+<span id="46">46</span>
+<span id="47">47</span>
+<span id="48">48</span>
+<span id="49">49</span>
+<span id="50">50</span>
+<span id="51">51</span>
+<span id="52">52</span>
+<span id="53">53</span>
+<span id="54">54</span>
+<span id="55">55</span>
+<span id="56">56</span>
+<span id="57">57</span>
+<span id="58">58</span>
+<span id="59">59</span>
+<span id="60">60</span>
+<span id="61">61</span>
+<span id="62">62</span>
+<span id="63">63</span>
+<span id="64">64</span>
+<span id="65">65</span>
+<span id="66">66</span>
+<span id="67">67</span>
+<span id="68">68</span>
+<span id="69">69</span>
+<span id="70">70</span>
+<span id="71">71</span>
+<span id="72">72</span>
+<span id="73">73</span>
+<span id="74">74</span>
+<span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
+<span id="78">78</span>
+<span id="79">79</span>
+<span id="80">80</span>
+<span id="81">81</span>
+<span id="82">82</span>
+<span id="83">83</span>
+</pre><div class="example-wrap"><pre class="rust ">
+<span class="doccomment">//! Extension traits for mapping [`Deref`](std::ops::Deref) and [`DerefMut`](std::ops::DerefMut)</span>
+<span class="doccomment">//! values.</span>
+<span class="doccomment">//!</span>
+<span class="doccomment">//! To concisely borrow a value from a container with interior mutability, this crate provides</span>
+<span class="doccomment">//! extension traits to adapt a `Deref` value to a new one with a different target type, and the</span>
+<span class="doccomment">//! same for `DerefMut`.</span>
+<span class="doccomment">//!</span>
+<span class="doccomment">//! # Example</span>
+<span class="doccomment">//!</span>
+<span class="doccomment">//! ```</span>
+<span class="doccomment">//! # use std::ops::{Deref, DerefMut};</span>
+<span class="doccomment">//! # use std::sync::Mutex;</span>
+<span class="doccomment">//! use deref_map::{DerefMapExt, DerefMutMapExt};</span>
+<span class="doccomment">//!</span>
+<span class="doccomment">//! struct Foo {</span>
+<span class="doccomment">//!     bar: u32,</span>
+<span class="doccomment">//! }</span>
+<span class="doccomment">//!</span>
+<span class="doccomment">//! pub fn borrow_bar_from_foo(foo: &amp;Mutex&lt;Foo&gt;) -&gt; impl Deref&lt;Target = u32&gt; + &#39;_ {</span>
+<span class="doccomment">//!     foo.lock().unwrap().map_ref(|foo| &amp;foo.bar)</span>
+<span class="doccomment">//! }</span>
+<span class="doccomment">//!</span>
+<span class="doccomment">//! pub fn borrow_bar_from_foo_mut(foo: &amp;mut Mutex&lt;Foo&gt;) -&gt; impl DerefMut&lt;Target = u32&gt; + &#39;_ {</span>
+<span class="doccomment">//!     foo.lock().unwrap().map_mut(|foo_ref| &amp;foo_ref.bar, |foo_mut| &amp;mut foo_mut.bar)</span>
+<span class="doccomment">//! }</span>
+<span class="doccomment">//! ```</span>
+<span class="doccomment">//!</span>
+<span class="doccomment">//! The [`map_ref`](crate::DerefMapExt::map_ref) method takes a closure `Fn(&amp;T) -&gt; &amp;R` and wraps a</span>
+<span class="doccomment">//! `Deref&lt;Target = T&gt;` into a `Deref&lt;Target = R&gt;`.</span>
+<span class="doccomment">//!</span>
+<span class="doccomment">//! The `DerefMut` trait requires the `Deref` trait, so [`map_mut`](crate::DerefMutMapExt::map_mut)</span>
+<span class="doccomment">//! takes two closures, one `Fn(&amp;T) -&gt; &amp;R` for `Deref`, and one `FnMut(&amp;mut T) -&gt; &amp;mut R` for</span>
+<span class="doccomment">//! `DerefMut`.</span>
+<span class="doccomment">//!</span>
+<span class="doccomment">//! Note the `T + &#39;_` lifetime specifier on both return types. That tells the compiler that the</span>
+<span class="doccomment">//! container must remain borrowed while the returned value is live, and in turn permits the</span>
+<span class="doccomment">//! returned value to capture the borrowed container.</span>
+<span class="doccomment">//!</span>
+<span class="doccomment">//! # Motivation</span>
+<span class="doccomment">//!</span>
+<span class="doccomment">//! It&#39;s easy to borrow values from smart pointers like [`Box`], [`Rc`](std::rc::Rc), and</span>
+<span class="doccomment">//! [`Arc`](std::sync::Arc) that implement `Deref`.</span>
+<span class="doccomment">//!</span>
+<span class="doccomment">//! ```</span>
+<span class="doccomment">//! # struct Foo {</span>
+<span class="doccomment">//! #     bar: u32,</span>
+<span class="doccomment">//! # }</span>
+<span class="doccomment">//! #</span>
+<span class="doccomment">//! fn borrow_bar_from_foo(foo: &amp;Box&lt;Foo&gt;) -&gt; &amp;u32 {</span>
+<span class="doccomment">//!     &amp;foo.bar</span>
+<span class="doccomment">//! }</span>
+<span class="doccomment">//! ```</span>
+<span class="doccomment">//!</span>
+<span class="doccomment">//! But containers with interior mutability like [`RefCell`](std::cell::RefCell),</span>
+<span class="doccomment">//! [`Mutex`](std::sync::Mutex), and [`RwLock`](std::sync::RwLock) cannot implement `Deref`. They</span>
+<span class="doccomment">//! have accessors that need to be able to fail in order to enforce the borrowing rules, and they</span>
+<span class="doccomment">//! need to be informed when the borrow ends. Instead, their accessors return a wrapper that</span>
+<span class="doccomment">//! implements `Deref` (and usually [`Drop`] as well).</span>
+<span class="doccomment">//!</span>
+<span class="doccomment">//! Simply borrowing from the wrapper leaves no way for the wrapper to live as long as the borrow.</span>
+<span class="doccomment">//!</span>
+<span class="doccomment">//! ```compile_fail</span>
+<span class="doccomment">//! # use std::cell::{RefCell};</span>
+<span class="doccomment">//! #</span>
+<span class="doccomment">//! # struct Foo {</span>
+<span class="doccomment">//! #     bar: u32,</span>
+<span class="doccomment">//! # }</span>
+<span class="doccomment">//! #</span>
+<span class="doccomment">//! fn borrow_bar_from_foo(foo: &amp;RefCell&lt;Foo&gt;) -&gt; &amp;u32 {</span>
+<span class="doccomment">//!     let wrapper = foo.borrow();</span>
+<span class="doccomment">//!     &amp;wrapper.bar</span>
+<span class="doccomment">//!     // wrapper is dropped here, so our borrow is invalid</span>
+<span class="doccomment">//! }</span>
+<span class="doccomment">//! ```</span>
+
+<span class="kw">mod</span> <span class="ident">deref_map_ext</span>;
+<span class="kw">mod</span> <span class="ident">deref_mut_map_ext</span>;
+<span class="kw">mod</span> <span class="ident">map_mut</span>;
+<span class="kw">mod</span> <span class="ident">map_ref</span>;
+
+<span class="kw">pub</span> <span class="kw">use</span> <span class="kw">crate</span>::{
+    <span class="ident">deref_map_ext</span>::<span class="ident">DerefMapExt</span>, <span class="ident">deref_mut_map_ext</span>::<span class="ident">DerefMutMapExt</span>, <span class="ident">map_mut</span>::<span class="ident">MapMut</span>, <span class="ident">map_ref</span>::<span class="ident">MapRef</span>,
+};
+</pre></div>
+</section><section id="search" class="content hidden"></section><section class="footer"></section><script>window.rootPath = "../../";window.currentCrate = "deref_map";</script><script src="../../main.js"></script><script src="../../source-script.js"></script><script src="../../source-files.js"></script><script defer src="../../search-index.js"></script></body></html>

@@ -1,0 +1,1 @@
+initSidebarItems({"constant":[["VROM_ADDR_DESC",""]],"enum":[["VirtualSliceError",""]],"struct":[["FileMetadata",""],["FileSystemTableEntry",""],["LazyFileSystem",""],["VromAddr","An address in VROM."]]});

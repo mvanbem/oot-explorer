@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["deref_map"] = [{"text":"impl&lt;'a, T, FRef, FMut, R&gt; DerefMut for MapMut&lt;'a, T, FRef, FMut, R&gt; <span class=\"where fmt-newline\">where<br>&nbsp;&nbsp;&nbsp;&nbsp;T: DerefMut + 'a,<br>&nbsp;&nbsp;&nbsp;&nbsp;FRef: for&lt;'b&gt; Fn(&amp;'b T::Target) -&gt; &amp;'b R,<br>&nbsp;&nbsp;&nbsp;&nbsp;FMut: for&lt;'b&gt; FnMut(&amp;'b mut T::Target) -&gt; &amp;'b mut R,<br>&nbsp;&nbsp;&nbsp;&nbsp;R: ?Sized,&nbsp;</span>","synthetic":false,"types":[]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

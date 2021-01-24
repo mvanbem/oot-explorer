@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["Rom","A borrowed reference to an entire Ocarina of Time ROM."],["RomAddr","An address in ROM."]]});

@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["oot_explorer_core"] = [{"text":"impl&lt;'a, T&gt; IntoIterator for Slice&lt;'a, T&gt; <span class=\"where fmt-newline\">where<br>&nbsp;&nbsp;&nbsp;&nbsp;T: Instantiate&lt;'a&gt; + ReflectSized,&nbsp;</span>","synthetic":false,"types":[]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

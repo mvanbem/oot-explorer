@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["dump",""]],"mod":[["bitfield",""],["enum_",""],["instantiate",""],["pointer",""],["primitive",""],["sized",""],["sourced",""],["struct_",""],["type_",""]]});

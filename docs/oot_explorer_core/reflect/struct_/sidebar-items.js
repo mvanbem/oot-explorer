@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["StructFieldLocation",""]],"struct":[["FieldDescriptor",""],["StructDescriptor",""],["UnionDescriptor",""]],"type":[["IsEndFn",""]]});

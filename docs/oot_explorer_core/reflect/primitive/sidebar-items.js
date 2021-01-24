@@ -1,0 +1,1 @@
+initSidebarItems({"constant":[["BOOL_DESC",""],["I16_DESC",""],["I32_DESC",""],["I8_DESC",""],["U16_DESC",""],["U32_DESC",""],["U8_DESC",""]],"enum":[["PrimitiveType",""]]});

@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["oot_explorer_core"] = [{"text":"impl&lt;'scope, T&gt; Iterator for Iter&lt;'scope, T&gt; <span class=\"where fmt-newline\">where<br>&nbsp;&nbsp;&nbsp;&nbsp;T: Instantiate&lt;'scope&gt; + ReflectSized + Delimited,&nbsp;</span>","synthetic":false,"types":[]},{"text":"impl&lt;'a, T&gt; Iterator for Iter&lt;'a, T&gt; <span class=\"where fmt-newline\">where<br>&nbsp;&nbsp;&nbsp;&nbsp;T: Instantiate&lt;'a&gt; + ReflectSized,&nbsp;</span>","synthetic":false,"types":[]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["ScopedOwner","A scoped owner for arbitrary values."]]});

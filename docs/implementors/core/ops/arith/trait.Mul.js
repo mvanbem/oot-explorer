@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["oot_explorer_gl"] = [{"text":"impl&lt;'a, 'b&gt; Mul&lt;&amp;'b Matrix&gt; for &amp;'a Matrix","synthetic":false,"types":[]},{"text":"impl&lt;'a&gt; Mul&lt;Point&gt; for &amp;'a Matrix","synthetic":false,"types":[]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

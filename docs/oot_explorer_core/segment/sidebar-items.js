@@ -1,0 +1,1 @@
+initSidebarItems({"constant":[["SEGMENT_ADDR_DESC",""]],"enum":[["SegmentResolveError",""]],"struct":[["Segment",""],["SegmentAddr","A segmented address."],["SegmentCtx",""]]});

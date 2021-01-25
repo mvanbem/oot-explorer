@@ -12,17 +12,15 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 base64 = "0.13"
-byteorder = "1"
 console_error_panic_hook = "0.1"
+deref-map = { path = "../deref-map" }
 js-sys = "0.3"
-num-traits = "0.2"
 oot-explorer-core = { path = "../oot-explorer-core" }
 oot-explorer-gl = { path = "../oot-explorer-gl" }
 scoped-owner = { path = "../scoped-owner" }
 serde = { version = "1", features = ["derive"] }
 serde_bytes = "0.11"
 serde-wasm-bindgen = "0.1"
-slotmap = "0.4"
 wasm-bindgen = "0.2"
 
 [dependencies.web-sys]
@@ -30,12 +28,18 @@ version = "0.3"
 features = [
     "console",
     "Document",
+    "DomTokenList",
     "ExtTextureFilterAnisotropic",
     "HtmlCanvasElement",
     "HtmlElement",
     "Node",
+    "Text",
     "WebGl2RenderingContext",
     "WebGlSampler",
     "WebGlTexture",
     "Window",
 ]
+
+[features]
+default = []
+trace_macros = []

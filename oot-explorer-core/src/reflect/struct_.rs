@@ -23,6 +23,7 @@ pub struct FieldDescriptor {
     pub desc: TypeDescriptor,
 }
 
+#[derive(Clone)]
 pub enum StructFieldLocation {
     Simple {
         offset: u32,

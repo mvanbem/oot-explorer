@@ -20,15 +20,15 @@ use crate::MapMut;
 ///     bar: u32,
 /// }
 ///
-/// fn borrow_bar_from_ref_cell_foo(foo: &RefCell<Foo>) -> impl DerefMut<Target = u32> + '_ {
+/// fn borrow_bar_from_ref_cell_foo_mut(foo: &RefCell<Foo>) -> impl DerefMut<Target = u32> + '_ {
 ///     foo.borrow_mut().map_mut(|foo_ref| &foo_ref.bar, |foo_mut| &mut foo_mut.bar)
 /// }
 ///
-/// fn borrow_bar_from_mutex_foo(foo: &Mutex<Foo>) -> impl DerefMut<Target = u32> + '_ {
+/// fn borrow_bar_from_mutex_foo_mut(foo: &Mutex<Foo>) -> impl DerefMut<Target = u32> + '_ {
 ///     foo.lock().unwrap().map_mut(|foo_ref| &foo_ref.bar, |foo_mut| &mut foo_mut.bar)
 /// }
 ///
-/// fn borrow_bar_from_rwlock_foo(foo: &RwLock<Foo>) -> impl DerefMut<Target = u32> + '_ {
+/// fn borrow_bar_from_rwlock_foo_mut(foo: &RwLock<Foo>) -> impl DerefMut<Target = u32> + '_ {
 ///     foo.write().unwrap().map_mut(|foo_ref| &foo_ref.bar, |foo_mut| &mut foo_mut.bar)
 /// }
 /// ```

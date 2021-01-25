@@ -273,17 +273,15 @@ name = "oot-explorer-web"
 version = "0.1.0"
 dependencies = [
  "base64",
- "byteorder",
  "console_error_panic_hook",
+ "deref-map",
  "js-sys",
- "num-traits",
  "oot-explorer-core",
  "oot-explorer-gl",
  "scoped-owner",
  "serde",
  "serde-wasm-bindgen",
  "serde_bytes",
- "slotmap",
  "wasm-bindgen",
  "web-sys",
 ]

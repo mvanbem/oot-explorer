@@ -5,7 +5,7 @@ macro_rules! declare_pointer_descriptor {
                 $crate::reflect::type_::TypeDescriptor::Pointer(
                     &$crate::reflect::pointer::PointerDescriptor {
                         name: concat!(stringify!($type), "*"),
-                        underlying: [<$type:snake:upper _DESC>],
+                        target: [<$type:snake:upper _DESC>],
                     },
                 );
         }

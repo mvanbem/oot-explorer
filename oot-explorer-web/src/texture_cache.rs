@@ -5,6 +5,7 @@ use scoped_owner::ScopedOwner;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use wasm_bindgen::UnwrapThrowExt;
 use web_sys::{WebGl2RenderingContext, WebGl2RenderingContext as Gl, WebGlTexture};
 
 pub fn opaque_key(descriptor: &TextureDescriptor) -> u32 {
@@ -15,7 +16,7 @@ pub fn opaque_key(descriptor: &TextureDescriptor) -> u32 {
 }
 
 fn create_gl_texture(gl: &WebGl2RenderingContext, decoded: DecodedTexture) -> WebGlTexture {
-    let texture = gl.create_texture().unwrap();
+    let texture = gl.create_texture().unwrap_throw();
     gl.bind_texture(Gl::TEXTURE_2D, Some(&texture));
 
     gl.tex_storage_2d(
@@ -36,7 +37,7 @@ fn create_gl_texture(gl: &WebGl2RenderingContext, decoded: DecodedTexture) -> We
         Gl::UNSIGNED_BYTE,
         Some(&decoded.data),
     )
-    .unwrap();
+    .unwrap_throw();
 
     texture
 }

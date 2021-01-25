@@ -16,6 +16,8 @@ where
 
 impl<'a, T, F, R> MapRef<'a, T, F, R>
 where
+    T: Deref + 'a,
+    F: for<'b> Fn(&'b T::Target) -> &'b R,
     R: ?Sized,
 {
     pub fn new(inner: T, f: F) -> Self {

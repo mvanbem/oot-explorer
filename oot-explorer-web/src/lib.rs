@@ -1,3 +1,8 @@
+#![cfg_attr(feature = "trace_macros", feature(trace_macros))]
+
+#[cfg(feature = "trace_macros")]
+trace_macros!(true);
+
 use oot_explorer_core::fs::LazyFileSystem;
 use oot_explorer_core::header::room::RoomHeaderVariant;
 use oot_explorer_core::header::scene::SceneHeaderVariant;
@@ -13,9 +18,14 @@ use oot_explorer_core::versions;
 use oot_explorer_gl::display_list_interpreter::DisplayListInterpreter;
 use scoped_owner::ScopedOwner;
 use serde::Serialize;
+use std::sync::{Arc, Mutex};
 use wasm_bindgen::prelude::*;
 use web_sys::{WebGl2RenderingContext, WebGlSampler, WebGlTexture};
 
+#[macro_use]
+mod macros;
+
+mod explore;
 mod sampler_cache;
 mod texture_cache;
 
@@ -29,8 +39,11 @@ pub fn main() {
 
 #[wasm_bindgen]
 pub struct Context {
+    inner: Arc<Mutex<InnerContext>>,
+}
+pub struct InnerContext {
     gl: WebGl2RenderingContext,
-    rom_data: Box<[u8]>,
+    rom_data: Arc<[u8]>,
     texture_cache: TextureCache,
     sampler_cache: SamplerCache,
 }
@@ -69,21 +82,25 @@ impl Context {
     #[wasm_bindgen(constructor)]
     pub fn new(gl: WebGl2RenderingContext, rom_data: Box<[u8]>) -> Context {
         Context {
-            gl,
-            rom_data,
-            texture_cache: TextureCache::new(),
-            sampler_cache: SamplerCache::new(),
+            inner: Arc::new(Mutex::new(InnerContext {
+                gl,
+                rom_data: rom_data.into(),
+                texture_cache: TextureCache::new(),
+                sampler_cache: SamplerCache::new(),
+            })),
         }
     }
 
     #[wasm_bindgen(js_name = processScene)]
-    pub fn process_scene(&mut self, scene_index: usize) -> JsValue {
-        let Context {
+    pub fn process_scene(&self, scene_index: usize) -> JsValue {
+        let mut inner_mut = self.inner.lock().unwrap_throw();
+        let InnerContext {
             ref gl,
             ref rom_data,
             ref mut texture_cache,
             ref mut sampler_cache,
-        } = self;
+        } = *inner_mut;
+
         let rom = Rom::new(rom_data);
         ScopedOwner::with_scope(|scope| {
             let mut fs = LazyFileSystem::new(rom, versions::oot_ntsc_10::FILE_TABLE_ROM_ADDR);
@@ -134,7 +151,7 @@ impl Context {
                 backgrounds,
                 start_pos,
             })
-            .unwrap()
+            .unwrap_throw()
         })
     }
 
@@ -145,12 +162,22 @@ impl Context {
 
     #[wasm_bindgen(js_name = getTexture)]
     pub fn get_texture(&self, key: u32) -> Option<WebGlTexture> {
-        self.texture_cache.get_with_key(key).cloned()
+        self.inner
+            .lock()
+            .unwrap_throw()
+            .texture_cache
+            .get_with_key(key)
+            .cloned()
     }
 
     #[wasm_bindgen(js_name = getSampler)]
     pub fn get_sampler(&self, key: u32) -> Option<WebGlSampler> {
-        self.sampler_cache.get_with_key(key).cloned()
+        self.inner
+            .lock()
+            .unwrap_throw()
+            .sampler_cache
+            .get_with_key(key)
+            .cloned()
     }
 }
 
@@ -248,7 +275,7 @@ fn examine_room<'a>(
     let background_to_string = |background: Background<'a>| {
         // TODO: Could definitely pre-allocate here instead of growing incrementally.
         let mut result = "data:image/jpeg;base64,".to_string();
-        let data = cpu_ctx.resolve(background.ptr()).unwrap();
+        let data = cpu_ctx.resolve(background.ptr()).unwrap_throw();
         base64::encode_config_buf(data, base64::STANDARD_NO_PAD, &mut result);
         result
     };

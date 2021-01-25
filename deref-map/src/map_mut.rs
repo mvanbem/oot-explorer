@@ -17,6 +17,9 @@ where
 
 impl<'a, T, FRef, FMut, R> MapMut<'a, T, FRef, FMut, R>
 where
+    T: DerefMut + 'a,
+    FRef: for<'b> Fn(&'b T::Target) -> &'b R,
+    FMut: for<'b> FnMut(&'b mut T::Target) -> &'b mut R,
     R: ?Sized,
 {
     pub fn new(inner: T, f_ref: FRef, f_mut: FMut) -> Self {

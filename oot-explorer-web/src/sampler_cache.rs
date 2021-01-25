@@ -2,6 +2,7 @@ use oot_explorer_gl::shader_state::TextureParams;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use wasm_bindgen::UnwrapThrowExt;
 use web_sys::{WebGl2RenderingContext, WebGl2RenderingContext as Gl, WebGlSampler};
 
 pub fn opaque_key(params: &TextureParams) -> u32 {
@@ -13,7 +14,7 @@ pub fn opaque_key(params: &TextureParams) -> u32 {
 }
 
 fn create_gl_sampler(gl: &WebGl2RenderingContext, _params: &TextureParams) -> WebGlSampler {
-    let sampler = gl.create_sampler().unwrap();
+    let sampler = gl.create_sampler().unwrap_throw();
     gl.sampler_parameteri(&sampler, Gl::TEXTURE_MAG_FILTER, Gl::NEAREST as i32);
     gl.sampler_parameteri(&sampler, Gl::TEXTURE_MIN_FILTER, Gl::NEAREST as i32);
 

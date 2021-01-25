@@ -8,7 +8,7 @@ use crate::segment::{SegmentAddr, SegmentCtx, SegmentResolveError};
 
 pub struct PointerDescriptor {
     pub name: &'static str,
-    pub underlying: TypeDescriptor,
+    pub target: TypeDescriptor,
 }
 
 pub(super) fn dump_pointer<'scope>(
@@ -36,5 +36,5 @@ pub(super) fn dump_pointer<'scope>(
     };
 
     print!("&");
-    dump(scope, fs, segment_ctx, indent_level, desc.underlying, addr)
+    dump(scope, fs, segment_ctx, indent_level, desc.target, addr)
 }

@@ -16,12 +16,17 @@ function $t(name, params) {
   return e;
 }
 
+function $text(text) {
+  return document.createTextNode(text);
+}
+
 window.addEventListener('error', e => {
   Status.show('top-level error: ' + e.message);
 });
 
 window.addEventListener('DOMContentLoaded', async () => {
-  document.getElementById('clear-button').addEventListener('click', async () => {
+  // TODO: Show a pop-up menu that makes it clear what this does.
+  document.getElementById('menu').addEventListener('click', async () => {
     await RomStorage.clear();
     window.location.reload();
   });
@@ -226,28 +231,76 @@ class RomView {
     this.element = $t('div', {
       className: 'rom-view',
       children: [
-        $t('h1', { textContent: 'Store ROM' }),
+        $t('div', { className: 'title', textContent: 'Store ROM' }),
         $t('p', {
           textContent: 'Select a big-endian ROM image of The Legend of Zelda: Ocarina of Time, '
-            + 'NTSC version 1.0. The typical file extension is .z64.'
+            + 'NTSC version 1.0.',
         }),
-        this.fileInput = $t('input', { type: 'file' }),
-        this.storeButton = $t('button', { textContent: 'Store' }),
-        this.errorDiv = $t('p', { className: 'error' }),
+        $t('p', {
+          children: [
+            $text('The typical file extension is '),
+            $t('tt', { textContent: '.z64' }),
+            $text('.'),
+          ],
+        }),
+        this.fileName = $t('p', { className: 'file-name', textContent: '(no selection)' }),
+        this.errorDiv = $t('p', {
+          className: 'error',
+          style: 'display: none',
+        }),
+        $t('div', {
+          className: 'button-row',
+          children: [
+            $t('label', {
+              className: 'file-input',
+              textContent: 'Choose File',
+              children: [
+                this.fileInput = $t('input', { type: 'file' }),
+              ],
+            }),
+            this.storeButton = $t('button', { textContent: 'Store' }),
+          ],
+        }),
       ],
     });
 
+    this.fileInput.addEventListener('input', () => {
+      let fileList = this.fileInput.files;
+      switch (fileList.length) {
+        case 0:
+          this.fileName.textContent = '(no selection)';
+          break;
+
+        case 1:
+          this.fileName.textContent = fileList[0].name;
+          break;
+
+        default:
+          this.fileName.textContent = '(multiple files)';
+          break;
+      }
+      this.hideError();
+    });
     this.storeButton.addEventListener('click', () => this.handleStore());
+  }
+
+  hideError() {
+    this.errorDiv.style.display = 'none';
+  }
+
+  showError(text) {
+    this.errorDiv.textContent = text;
+    this.errorDiv.style.display = null;
   }
 
   handleStore() {
     this.storeButton.disabled = true;
-    this.errorDiv.textContent = '';
+    this.hideError();
 
     let fileList = this.fileInput.files;
     if (fileList.length !== 1) {
       this.storeButton.disabled = false;
-      this.errorDiv.textContent = 'Select one file.';
+      this.showError('Select one file.');
       return;
     }
     let file = fileList[0];
@@ -266,15 +319,15 @@ class RomView {
     let rom;
     try {
       rom = await romPromise;
+
+      await RomStorage.store(rom);
+      Container.setView(new MainView({ rom }).canvas);
     } catch (e) {
       this.storeButton.disabled = false;
-      this.errorDiv.textContent = e.name + ': ' + e.message;
+      this.showError(e.message);
       Status.hide();
       return;
     }
-
-    await RomStorage.store(rom);
-    Container.setView(new MainView({ rom }).canvas);
   }
 }
 
@@ -401,6 +454,11 @@ class MainView {
     });
     this.w = null;
     this.h = null;
+
+    document.getElementById('explore').addEventListener('click', () => {
+      let exploreView = core.ExploreView.new(document, this.ctx);
+      this.canvas.parentElement.appendChild(exploreView.element);
+    });
 
     this.canvas.addEventListener('mousemove', e => {
       if (e.buttons & 1) {
@@ -531,6 +589,8 @@ class MainView {
   async changeScene(sceneIndex) {
     let gl = this.gl;
     this.sceneIndex = sceneIndex;
+    document.getElementById('scene').textContent =
+      'Scene: ' + (sceneIndex + 1) + '/' + this.ctx.sceneCount;
     updateUrlFragment({ sceneIndex });
 
     Status.show('Processing scene...');

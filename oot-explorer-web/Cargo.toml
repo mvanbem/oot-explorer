@@ -32,6 +32,7 @@ features = [
     "ExtTextureFilterAnisotropic",
     "HtmlCanvasElement",
     "HtmlElement",
+    "MouseEvent",
     "Node",
     "Text",
     "WebGl2RenderingContext",

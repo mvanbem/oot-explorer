@@ -1,9 +1,12 @@
-import * as core from './oot_explorer_web.js';
+import { vec3, mat4 } from 'gl-matrix'
+import type * as wasm from '../pkg';
 
-let vec3 = glMatrix.vec3;
-let mat4 = glMatrix.mat4;
+type WasmModule = typeof import('../pkg');
+const wasmPromise: Promise<WasmModule> = (async () => {
+  return await import('../pkg');
+})();
 
-function $t(name, params) {
+function $t(name, params?) {
   let e = document.createElement(name);
   for (let key in params) {
     let value = params[key];
@@ -31,20 +34,18 @@ window.addEventListener('DOMContentLoaded', async () => {
     window.location.reload();
   });
 
-  // This definitely happens before any MainView is constructed, so MainView is free to assume core
-  // is safe to use.
-  await core.default();
-
   let rom = await RomStorage.load();
   if (rom === null) {
     Container.setView(new RomView().element);
   } else {
-    Container.setView(new MainView({ rom }).canvas);
+    Container.setView(new MainView({ wasm: await wasmPromise, rom }).canvas);
   }
 });
 
 const Container = (() => {
   class Container {
+    element: HTMLElement;
+
     constructor() {
       this.element = document.getElementById('container');
     }
@@ -66,6 +67,8 @@ const Container = (() => {
 
 const Status = (() => {
   class Status {
+    element: HTMLElement;
+
     constructor() {
       this.element = document.getElementById('status');
     }
@@ -83,12 +86,18 @@ const Status = (() => {
   return new Status();
 })();
 
+interface HasPush<T> {
+  push(value: T): void;
+}
+
 const RomStorage = (() => {
   const DATABASE_NAME = 'rom';
   const OBJECT_STORE_NAME = 'rom';
   const KEY = 'rom';
 
   class RomStorage {
+    dbPromise: Promise<IDBDatabase>;
+
     constructor() {
       this.dbPromise = null;
     }
@@ -98,7 +107,7 @@ const RomStorage = (() => {
         this.dbPromise = new Promise((resolve, reject) => {
           let req = window.indexedDB.open(DATABASE_NAME, 1);
           req.addEventListener('success', () => resolve(req.result));
-          req.addEventListener('error', () => reject(req.errorCode));
+          req.addEventListener('error', () => reject(req.error));
           req.addEventListener('upgradeneeded', () => {
             let db = req.result;
             let store = db.createObjectStore(OBJECT_STORE_NAME);
@@ -111,10 +120,10 @@ const RomStorage = (() => {
     async load() {
       Status.show('Checking IndexedDB for stored ROM...');
       const db = await this.getDatabase();
-      const rom = await new Promise((resolve, reject) => {
+      const rom = await new Promise<ArrayBuffer>((resolve, reject) => {
         let txn = db.transaction([OBJECT_STORE_NAME], 'readwrite');
         txn.addEventListener('complete', () => resolve(req.result || null));
-        txn.addEventListener('error', () => reject(txn.errorCode));
+        txn.addEventListener('error', () => reject(txn.error));
         txn.addEventListener('abort', () => reject(new Error('transaction aborted')));
         let req = txn.objectStore(OBJECT_STORE_NAME).get(KEY);
       });
@@ -137,10 +146,10 @@ const RomStorage = (() => {
 
       Status.show('Storing ROM to IndexedDB...');
       const db = await this.getDatabase();
-      return await new Promise((resolve, reject) => {
+      return await new Promise<void>((resolve, reject) => {
         let txn = db.transaction([OBJECT_STORE_NAME], 'readwrite');
         txn.addEventListener('complete', () => resolve());
-        txn.addEventListener('error', () => reject(txn.errorCode));
+        txn.addEventListener('error', () => reject(txn.error));
         txn.addEventListener('abort', () => reject(new Error('transaction aborted')));
         txn.objectStore(OBJECT_STORE_NAME).put(rom, KEY);
       });
@@ -149,16 +158,16 @@ const RomStorage = (() => {
     async clear() {
       Status.show('Clearing IndexedDB...');
       const db = await this.getDatabase();
-      return await new Promise((resolve, reject) => {
+      return await new Promise<void>((resolve, reject) => {
         let txn = db.transaction([OBJECT_STORE_NAME], 'readwrite');
         txn.addEventListener('complete', () => resolve());
-        txn.addEventListener('error', () => reject(txn.errorCode));
+        txn.addEventListener('error', () => reject(txn.error));
         txn.addEventListener('abort', () => reject(new Error('transaction aborted')));
         txn.objectStore(OBJECT_STORE_NAME).delete(KEY);
       });
     }
 
-    isValid(rom, outMessages) {
+    isValid(rom: ArrayBuffer, outMessages?: HasPush<string>) {
       let header = new RomHeader(rom);
       let pass = true;
 
@@ -206,7 +215,11 @@ const RomStorage = (() => {
 })();
 
 class RomHeader {
-  constructor(arrayBuffer) {
+  imageName: string;
+  cartridgeId: string;
+  revisionNumber: number;
+
+  constructor(arrayBuffer: ArrayBuffer) {
     let data = new DataView(arrayBuffer);
 
     this.imageName = '';
@@ -226,6 +239,12 @@ class RomHeader {
 }
 
 class RomView {
+  element: HTMLElement;
+  fileName: HTMLElement;
+  errorDiv: HTMLElement;
+  fileInput: HTMLInputElement;
+  storeButton: HTMLButtonElement;
+
   constructor() {
     Status.hide();
     this.element = $t('div', {
@@ -321,7 +340,7 @@ class RomView {
       rom = await romPromise;
 
       await RomStorage.store(rom);
-      Container.setView(new MainView({ rom }).canvas);
+      Container.setView(new MainView({ wasm: await wasmPromise, rom }).canvas);
     } catch (e) {
       this.storeButton.disabled = false;
       this.showError(e.message);
@@ -439,11 +458,44 @@ function parseUrlFragment() {
 function updateUrlFragment({ sceneIndex }) {
   let url = new URL(window.location.toString());
   url.hash = '#scene=' + (sceneIndex + 1);
-  window.location.replace(url);
+  window.location.replace(url.toString());
+}
+
+interface View {
+  pos: vec3;
+  yaw: number;
+  pitch: number;
+}
+
+interface TouchState {
+  x: number;
+  y: number;
+};
+
+interface MainViewCtorArgs {
+  wasm: WasmModule;
+  rom: ArrayBuffer;
 }
 
 class MainView {
-  constructor({ rom }) {
+  canvas: HTMLCanvasElement;
+  gl: WebGL2RenderingContext;
+  w?: number;
+  h?: number;
+  ctx: wasm.Context;
+  touches: Map<number, TouchState>;
+  keys: Map<string, boolean>;
+  sceneIndex: number;
+  view: View;
+  backgroundProgram: WebGLProgram;
+  backgroundVertexBuffer: WebGLBuffer;
+  batches: any[];
+  currentResolves: any[];
+  nextResolves: any[];
+  backgrounds: any[];
+  prevTimestamp?: number;
+
+  constructor({ wasm, rom }: MainViewCtorArgs) {
     this.canvas = $t('canvas');
     let gl = this.gl = this.canvas.getContext(
       'webgl2', {
@@ -456,7 +508,7 @@ class MainView {
     this.h = null;
 
     document.getElementById('explore').addEventListener('click', () => {
-      let exploreView = core.ExploreView.new(document, this.ctx);
+      let exploreView = wasm.ExploreView.new(document, this.ctx);
       this.canvas.parentElement.appendChild(exploreView.element);
     });
 
@@ -571,7 +623,7 @@ class MainView {
       return buffer;
     })();
 
-    this.ctx = new core.Context(this.gl, new Uint8Array(rom));
+    this.ctx = new wasm.Context(this.gl, new Uint8Array(rom));
     this.batches = null;
     this.sceneIndex = null;
     this.currentResolves = [];
@@ -669,7 +721,7 @@ class MainView {
     for (let i = 0; i < processedScene.backgrounds.length; ++i) {
       let img = document.createElement('img');
       img.src = processedScene.backgrounds[i];
-      let bitmap = await new Promise(resolve => {
+      let bitmap = await new Promise<ImageBitmap>(resolve => {
         img.onload = () => resolve(createImageBitmap(img));
       });
 
@@ -719,7 +771,7 @@ class MainView {
     }
   }
 
-  step(timestamp) {
+  step(timestamp: number) {
     // Trigger anything that was waiting for a new frame.
     for (let resolve of this.currentResolves) {
       resolve();

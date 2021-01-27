@@ -6,20 +6,64 @@ const wasmPromise: Promise<WasmModule> = (async () => {
   return await import('../pkg');
 })();
 
-function $t(name, params?) {
-  let e = document.createElement(name);
-  for (let key in params) {
-    let value = params[key];
-    if (key === 'children') {
-      value.map(child => e.appendChild(child));
-    } else {
-      e[key] = value;
-    }
+namespace Wasm {
+  export interface ProcessSceneResult {
+    batches: ProcessSceneBatch[],
+    backgrounds: string[],
+    startPos?: [number, number, number, number, number],
   }
-  return e;
+
+  export interface ProcessSceneBatch {
+    fragmentShader: string;
+    vertexData: ArrayBuffer;
+    translucent: boolean,
+    textures: ProcessSceneTexture[],
+    zUpd: boolean,
+    decal: boolean,
+  }
+
+  export interface ProcessSceneTexture {
+    textureKey: number;
+    samplerKey: number;
+    width: number;
+    height: number;
+  }
 }
 
-function $text(text) {
+interface DollarTParams {
+  children?: Array<Node>;
+  className?: string;
+  textContent?: string;
+  style?: string;
+}
+interface DollarTInputParams extends DollarTParams {
+  type?: string;
+}
+
+function $t(name: 'input', params?: DollarTInputParams): HTMLInputElement;
+function $t<K extends keyof HTMLElementTagNameMap>(name: K, params?: DollarTParams): HTMLElementTagNameMap[K];
+function $t(name: string, params?: DollarTParams): HTMLElement;
+function $t(name: string, params?: DollarTParams | DollarTInputParams): HTMLElement {
+  let element = document.createElement(name);
+  if (params?.children) {
+    params.children.map(child => element.appendChild(child));
+  }
+  if (params?.className) {
+    element.className = params.className;
+  }
+  if (params?.textContent) {
+    element.textContent = params.textContent;
+  }
+  if (params?.style) {
+    element.style.cssText = params.style;
+  }
+  if (name === 'input' && (<DollarTInputParams>params)?.type) {
+    (<HTMLInputElement>element).type = (<DollarTInputParams>params).type!;
+  }
+  return element;
+}
+
+function $text(text: string): Text {
   return document.createTextNode(text);
 }
 
@@ -29,7 +73,7 @@ window.addEventListener('error', e => {
 
 window.addEventListener('DOMContentLoaded', async () => {
   // TODO: Show a pop-up menu that makes it clear what this does.
-  document.getElementById('menu').addEventListener('click', async () => {
+  document.getElementById('menu')!.addEventListener('click', async () => {
     await RomStorage.clear();
     window.location.reload();
   });
@@ -47,10 +91,10 @@ const Container = (() => {
     element: HTMLElement;
 
     constructor() {
-      this.element = document.getElementById('container');
+      this.element = document.getElementById('container')!;
     }
 
-    setView(view) {
+    setView(view: HTMLElement) {
       while (this.element.lastChild !== null) {
         this.element.removeChild(this.element.lastChild);
       }
@@ -70,25 +114,21 @@ const Status = (() => {
     element: HTMLElement;
 
     constructor() {
-      this.element = document.getElementById('status');
+      this.element = document.getElementById('status')!;
     }
 
-    show(msg) {
-      this.element.className = '';
+    show(msg: string) {
+      this.element.classList.remove('hidden');
       this.element.textContent = msg;
     }
 
     hide() {
-      this.element.className = 'hidden';
+      this.element.classList.add('hidden');
     }
   }
 
   return new Status();
 })();
-
-interface HasPush<T> {
-  push(value: T): void;
-}
 
 const RomStorage = (() => {
   const DATABASE_NAME = 'rom';
@@ -96,11 +136,7 @@ const RomStorage = (() => {
   const KEY = 'rom';
 
   class RomStorage {
-    dbPromise: Promise<IDBDatabase>;
-
-    constructor() {
-      this.dbPromise = null;
-    }
+    dbPromise?: Promise<IDBDatabase>;
 
     getDatabase() {
       if (!this.dbPromise) {
@@ -137,9 +173,8 @@ const RomStorage = (() => {
       return rom;
     }
 
-    // [rom] is expected to be an ArrayBuffer
-    async store(rom) {
-      let messages = [];
+    async store(rom: ArrayBuffer) {
+      let messages: string[] = [];
       if (!this.isValid(rom, messages)) {
         throw new Error('ROM failed validation: ' + messages.join('; '));
       }
@@ -167,7 +202,7 @@ const RomStorage = (() => {
       });
     }
 
-    isValid(rom: ArrayBuffer, outMessages?: HasPush<string>) {
+    isValid(rom: ArrayBuffer, outMessages?: string[]) {
       let header = new RomHeader(rom);
       let pass = true;
 
@@ -263,10 +298,7 @@ class RomView {
           ],
         }),
         this.fileName = $t('p', { className: 'file-name', textContent: '(no selection)' }),
-        this.errorDiv = $t('p', {
-          className: 'error',
-          style: 'display: none',
-        }),
+        this.errorDiv = $t('p', { className: 'error hidden' }),
         $t('div', {
           className: 'button-row',
           children: [
@@ -284,7 +316,7 @@ class RomView {
     });
 
     this.fileInput.addEventListener('input', () => {
-      let fileList = this.fileInput.files;
+      let fileList = this.fileInput.files!;
       switch (fileList.length) {
         case 0:
           this.fileName.textContent = '(no selection)';
@@ -304,19 +336,19 @@ class RomView {
   }
 
   hideError() {
-    this.errorDiv.style.display = 'none';
+    this.errorDiv.classList.add('hidden');
   }
 
-  showError(text) {
+  showError(text: string) {
     this.errorDiv.textContent = text;
-    this.errorDiv.style.display = null;
+    this.errorDiv.classList.remove('hidden');
   }
 
   handleStore() {
     this.storeButton.disabled = true;
     this.hideError();
 
-    let fileList = this.fileInput.files;
+    let fileList = this.fileInput.files!;
     if (fileList.length !== 1) {
       this.storeButton.disabled = false;
       this.showError('Select one file.');
@@ -328,17 +360,15 @@ class RomView {
     this.asyncCompleteStore(new Promise((resolve, reject) => {
       let reader = new FileReader();
       reader.readAsArrayBuffer(file);
-      reader.addEventListener('load', () => resolve(reader.result));
+      reader.addEventListener('load', () => resolve(<ArrayBuffer>reader.result));
       reader.addEventListener('error', () => reject(reader.error));
       reader.addEventListener('abort', () => new Error('read aborted'));
     }));
   }
 
-  async asyncCompleteStore(romPromise) {
-    let rom;
+  async asyncCompleteStore(romPromise: Promise<ArrayBuffer>) {
     try {
-      rom = await romPromise;
-
+      let rom = await romPromise;
       await RomStorage.store(rom);
       Container.setView(new MainView({ wasm: await wasmPromise, rom }).canvas);
     } catch (e) {
@@ -413,9 +443,9 @@ void main() {
 }
 `;
 
-function glInitShader(gl, type, source) {
+function glInitShader(gl: WebGL2RenderingContext, type: number, source: string) {
   try {
-    let shader = gl.createShader(type);
+    let shader = gl.createShader(type)!;
     gl.shaderSource(shader, source);
     gl.compileShader(shader);
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
@@ -428,8 +458,8 @@ function glInitShader(gl, type, source) {
   }
 }
 
-function glInitProgram(gl, vertexSource, fragmentSource) {
-  let program = gl.createProgram();
+function glInitProgram(gl: WebGL2RenderingContext, vertexSource: string, fragmentSource: string) {
+  let program = gl.createProgram()!;
   gl.attachShader(program, glInitShader(gl, gl.VERTEX_SHADER, vertexSource));
   gl.attachShader(program, glInitShader(gl, gl.FRAGMENT_SHADER, fragmentSource));
   gl.linkProgram(program);
@@ -439,7 +469,7 @@ function glInitProgram(gl, vertexSource, fragmentSource) {
   return program;
 }
 
-function addLineNumbers(text) {
+function addLineNumbers(text: string) {
   return text.split('\n').map((line, i) => (i + 1) + ' | ' + line).join('\n');
 }
 
@@ -455,7 +485,11 @@ function parseUrlFragment() {
   };
 }
 
-function updateUrlFragment({ sceneIndex }) {
+interface UpdateUrlFragmentParams {
+  sceneIndex: number;
+}
+
+function updateUrlFragment({ sceneIndex }: UpdateUrlFragmentParams) {
   let url = new URL(window.location.toString());
   url.hash = '#scene=' + (sceneIndex + 1);
   window.location.replace(url.toString());
@@ -477,6 +511,24 @@ interface MainViewCtorArgs {
   rom: ArrayBuffer;
 }
 
+interface Batch {
+  program: WebGLProgram;
+  vertexBuffer: WebGLBuffer;
+  translucent: boolean;
+  mode: number;
+  count: number;
+  textures: BatchTexture[];
+  zUpd: boolean;
+  decal: boolean;
+}
+
+interface BatchTexture {
+  texture: WebGLTexture;
+  sampler: WebGLSampler;
+  width: number;
+  height: number;
+}
+
 class MainView {
   canvas: HTMLCanvasElement;
   gl: WebGL2RenderingContext;
@@ -485,14 +537,14 @@ class MainView {
   ctx: wasm.Context;
   touches: Map<number, TouchState>;
   keys: Map<string, boolean>;
-  sceneIndex: number;
+  sceneIndex?: number;
   view: View;
   backgroundProgram: WebGLProgram;
   backgroundVertexBuffer: WebGLBuffer;
-  batches: any[];
-  currentResolves: any[];
-  nextResolves: any[];
-  backgrounds: any[];
+  batches: Batch[];
+  currentResolves: (() => void)[];
+  nextResolves: (() => void)[];
+  backgrounds: WebGLTexture[];
   prevTimestamp?: number;
 
   constructor({ wasm, rom }: MainViewCtorArgs) {
@@ -503,13 +555,11 @@ class MainView {
       antialias: false,
       depth: true,
       stencil: false,
-    });
-    this.w = null;
-    this.h = null;
+    })!;
 
-    document.getElementById('explore').addEventListener('click', () => {
+    document.getElementById('explore')!.addEventListener('click', () => {
       let exploreView = wasm.ExploreView.new(document, this.ctx);
-      this.canvas.parentElement.appendChild(exploreView.element);
+      this.canvas.parentElement!.appendChild(exploreView.element);
     });
 
     this.canvas.addEventListener('mousemove', e => {
@@ -528,7 +578,7 @@ class MainView {
     this.canvas.addEventListener('touchmove', e => {
       for (let touch of e.changedTouches) {
         if (this.touches.has(touch.identifier)) {
-          let old = this.touches.get(touch.identifier);
+          let old = this.touches.get(touch.identifier)!;
           this.view.yaw -= 0.005 * (touch.clientX - old.x);
           this.view.pitch -= 0.005 * (touch.clientY - old.y);
           this.touches.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
@@ -564,14 +614,18 @@ class MainView {
       }
 
       if (key === 'PageDown') {
-        let newSceneIndex = this.sceneIndex + 1;
-        if (newSceneIndex < this.ctx.sceneCount) {
-          this.changeScene(newSceneIndex);
+        if (this.sceneIndex !== undefined) {
+          let newSceneIndex = this.sceneIndex + 1;
+          if (newSceneIndex < this.ctx.sceneCount) {
+            this.changeScene(newSceneIndex);
+          }
         }
       } else if (key === 'PageUp') {
-        let newSceneIndex = this.sceneIndex - 1;
-        if (newSceneIndex >= 0) {
-          this.changeScene(newSceneIndex);
+        if (this.sceneIndex !== undefined) {
+          let newSceneIndex = this.sceneIndex - 1;
+          if (newSceneIndex >= 0) {
+            this.changeScene(newSceneIndex);
+          }
         }
       }
     });
@@ -617,17 +671,17 @@ class MainView {
         1, 0,
       ]);
 
-      let buffer = gl.createBuffer();
+      let buffer = gl.createBuffer()!;
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
       gl.bufferData(gl.ARRAY_BUFFER, data.buffer, gl.STATIC_DRAW);
       return buffer;
     })();
 
     this.ctx = new wasm.Context(this.gl, new Uint8Array(rom));
-    this.batches = null;
-    this.sceneIndex = null;
+    this.batches = [];
     this.currentResolves = [];
     this.nextResolves = [];
+    this.backgrounds = [];
 
     this.changeScene(parseUrlFragment().sceneIndex);
 
@@ -635,26 +689,26 @@ class MainView {
   }
 
   nextStep() {
-    return new Promise(resolve => this.nextResolves.push(resolve));
+    return new Promise<void>(resolve => this.nextResolves.push(resolve));
   }
 
-  async changeScene(sceneIndex) {
+  async changeScene(sceneIndex: number) {
     let gl = this.gl;
     this.sceneIndex = sceneIndex;
-    document.getElementById('scene').textContent =
+    document.getElementById('scene')!.textContent =
       'Scene: ' + (sceneIndex + 1) + '/' + this.ctx.sceneCount;
     updateUrlFragment({ sceneIndex });
 
     Status.show('Processing scene...');
     await this.nextStep();
 
-    let processedScene = this.ctx.processScene(sceneIndex);
+    let processedScene = <Wasm.ProcessSceneResult>this.ctx.processScene(sceneIndex);
 
     // Compile shaders for all batches.
     let vertexShader = glInitShader(gl, gl.VERTEX_SHADER, VERTEX_SHADER_SOURCE);
     let fragmentShaders = [];
     for (let batch of processedScene.batches) {
-      let shader = gl.createShader(gl.FRAGMENT_SHADER);
+      let shader = gl.createShader(gl.FRAGMENT_SHADER)!;
       gl.shaderSource(shader, batch.fragmentShader);
       gl.compileShader(shader);
       fragmentShaders.push(shader);
@@ -664,7 +718,7 @@ class MainView {
     let vertexBuffers = [];
     let textures = [];
     for (let batch of processedScene.batches) {
-      let buffer = gl.createBuffer();
+      let buffer = gl.createBuffer()!;
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
       gl.bufferData(gl.ARRAY_BUFFER, batch.vertexData, gl.STATIC_DRAW);
       vertexBuffers.push(buffer);
@@ -672,8 +726,8 @@ class MainView {
       let batch_textures = [];
       for (let texture of batch.textures) {
         batch_textures.push({
-          texture: this.ctx.getTexture(texture.textureKey),
-          sampler: this.ctx.getSampler(texture.samplerKey),
+          texture: this.ctx.getTexture(texture.textureKey)!,
+          sampler: this.ctx.getSampler(texture.samplerKey)!,
           width: texture.width,
           height: texture.height,
         });
@@ -684,7 +738,7 @@ class MainView {
     // Link programs for all batches.
     let programs = [];
     for (let i = 0; i < processedScene.batches.length; ++i) {
-      let program = gl.createProgram();
+      let program = gl.createProgram()!;
       gl.attachShader(program, vertexShader);
       gl.attachShader(program, fragmentShaders[i]);
       gl.linkProgram(program);
@@ -692,14 +746,14 @@ class MainView {
     }
 
     // Assemble all batches to be drawn.
-    let opaqueBatches = [];
-    let translucentBatches = [];
+    let opaqueBatches: Batch[] = [];
+    let translucentBatches: Batch[] = [];
     for (let i = 0; i < processedScene.batches.length; ++i) {
       if (!gl.getProgramParameter(programs[i], gl.LINK_STATUS)) {
         console.log('program info log:', gl.getProgramInfoLog(programs[i]));
         console.log('vertex shader info log:', gl.getShaderInfoLog(vertexShader));
         console.log('fragment shader info log:', gl.getShaderInfoLog(fragmentShaders[i]));
-        console.log('fragment shader source:\n' + addLineNumbers(gl.getShaderSource(fragmentShaders[i])));
+        console.log('fragment shader source:\n' + addLineNumbers(gl.getShaderSource(fragmentShaders[i])!));
         throw new Error('failed to link GL program');
       }
 
@@ -725,7 +779,7 @@ class MainView {
         img.onload = () => resolve(createImageBitmap(img));
       });
 
-      let texture = gl.createTexture();
+      let texture = gl.createTexture()!;
       gl.bindTexture(gl.TEXTURE_2D, texture);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -741,7 +795,7 @@ class MainView {
     }
 
     // Publish all new data.
-    this.batches = [].concat(opaqueBatches, translucentBatches);
+    this.batches = (<Batch[]>[]).concat(opaqueBatches, translucentBatches);
     this.backgrounds = backgrounds;
     if (processedScene.startPos) {
       this.view = {
@@ -758,7 +812,7 @@ class MainView {
     Status.hide();
   }
 
-  updateDimensions() {
+  updateDimensions(): [number, number] {
     let r = Container.getBoundingClientRect();
     let width = (r.width * window.devicePixelRatio) | 0;
     let height = (r.height * window.devicePixelRatio) | 0;
@@ -769,6 +823,8 @@ class MainView {
       this.canvas.style.width = r.width + 'px';
       this.canvas.style.height = r.height + 'px';
     }
+
+    return [this.w, this.h];
   }
 
   step(timestamp: number) {
@@ -779,7 +835,7 @@ class MainView {
     this.currentResolves = this.nextResolves;
     this.nextResolves = [];
 
-    this.updateDimensions();
+    let [w, h] = this.updateDimensions();
 
     if (this.prevTimestamp !== undefined) {
       let dt = (timestamp - this.prevTimestamp) / 1000;
@@ -816,15 +872,15 @@ class MainView {
     gl.clearColor(0.5, 1, 1, 1);
     gl.clearDepth(1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    gl.viewport(0, 0, this.w, this.h);
+    gl.viewport(0, 0, w, h);
 
     // Draw the background, if any.
     if (this.backgrounds && this.backgrounds.length > 0) {
       gl.useProgram(this.backgroundProgram);
       gl.uniform2f(
         gl.getUniformLocation(this.backgroundProgram, "u_scale"),
-        Math.min(1, this.h * 4 / 3 / this.w),
-        -Math.min(1, this.w * 3 / 4 / this.h),
+        Math.min(1, h * 4 / 3 / w),
+        -Math.min(1, w * 3 / 4 / h),
       );
 
       gl.depthMask(false);
@@ -852,8 +908,7 @@ class MainView {
     gl.frontFace(gl.CCW);
 
     let projectionMatrix = mat4.create();
-    mat4.perspective(
-      projectionMatrix, 0.5 * Math.PI, this.w / this.h, 1, 20000.0);
+    mat4.perspective(projectionMatrix, 0.5 * Math.PI, w / h, 1, 20000.0);
 
     let modelViewMatrix = mat4.create();
     mat4.rotateX(modelViewMatrix, modelViewMatrix, -this.view.pitch);

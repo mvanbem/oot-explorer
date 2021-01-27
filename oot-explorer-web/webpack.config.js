@@ -3,6 +3,7 @@ const WasmPackPlugin = require('@wasm-tool/wasm-pack-plugin');
 
 module.exports = {
     mode: 'development',
+    devtool: 'inline-source-map',
     entry: './ts/index.ts',
     output: {
         path: path.resolve(__dirname, 'dist'),
@@ -12,8 +13,7 @@ module.exports = {
         rules: [
             {
                 test: /\.tsx?$/,
-                use: 'ts-loader',
-                exclude: /node_modules/,
+                loader: 'ts-loader',
             },
         ],
     },

@@ -1,0 +1,4 @@
+// This one is for VS Code and is not used in the build.
+{
+    "strict": true,
+}

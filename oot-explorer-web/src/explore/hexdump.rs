@@ -4,13 +4,15 @@ use oot_explorer_core::versions::oot_ntsc_10;
 use scoped_owner::ScopedOwner;
 use std::fmt::Write;
 use std::ops::Range;
-use std::sync::{Arc, Mutex};
+use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::UnwrapThrowExt;
 use web_sys::{Document, HtmlElement};
 
-use crate::InnerContext;
+use crate::Context;
 
+#[wasm_bindgen]
 pub struct HexDumpView {
+    document: Document,
     element: HtmlElement,
     highlight: Option<Range<VromAddr>>,
     rows: Vec<Row>,
@@ -18,15 +20,17 @@ pub struct HexDumpView {
     data: Box<[u8]>,
 }
 
+#[wasm_bindgen]
 impl HexDumpView {
-    pub fn new(document: &Document, ctx: &Arc<Mutex<InnerContext>>) -> HexDumpView {
+    #[wasm_bindgen(constructor)]
+    pub fn new(document: &Document, ctx: &Context) -> HexDumpView {
         let element = html_template!(document,
             return div[class="explore-view-hexdump"] {}
         );
 
         // TODO: Remove this arbitrary choice. Make the caller provide data and a base address.
         let (base_addr, data) = ScopedOwner::with_scope(|scope| {
-            let ref_ctx = ctx.lock().unwrap_throw();
+            let ref_ctx = ctx.inner.lock().unwrap_throw();
             let mut fs = LazyFileSystem::new(
                 Rom::new(&ref_ctx.rom_data),
                 oot_ntsc_10::FILE_TABLE_ROM_ADDR,
@@ -50,6 +54,7 @@ impl HexDumpView {
         }
 
         HexDumpView {
+            document: document.clone(),
             element,
             highlight: None,
             rows,
@@ -58,11 +63,22 @@ impl HexDumpView {
         }
     }
 
-    pub fn element(&self) -> &HtmlElement {
-        &self.element
+    #[wasm_bindgen(getter)]
+    pub fn element(&self) -> HtmlElement {
+        self.element.clone()
     }
 
-    pub fn set_highlight(&mut self, document: &Document, highlight: Option<Range<VromAddr>>) {
+    #[wasm_bindgen(js_name = setHighlight)]
+    pub fn js_set_highlight(&mut self, start: u32, end: u32) {
+        self.set_highlight(Some(VromAddr(start)..VromAddr(end)));
+    }
+
+    #[wasm_bindgen(js_name = clearHighlight)]
+    pub fn js_clear_highlight(&mut self) {
+        self.set_highlight(None);
+    }
+
+    fn set_highlight(&mut self, highlight: Option<Range<VromAddr>>) {
         if highlight == self.highlight {
             return;
         }
@@ -75,7 +91,7 @@ impl HexDumpView {
             if old_rel != new_rel || new_rel == RangeRelation::CrossesReference {
                 // The highlight change might affect this row.
                 let new_row = Row::new(
-                    document,
+                    &self.document,
                     &self.data[offset as usize..],
                     addr,
                     highlight.as_ref(),

@@ -6,7 +6,7 @@ export const wasmPromise: Promise<WasmModule> = (async () => {
 
 // Types using serde-wasm-bindgen do not generate TypeScript type definitions.
 
-export namespace Wasm {
+export namespace WasmInterface {
     export interface ProcessSceneResult {
         batches: ProcessSceneBatch[],
         backgrounds: string[],

@@ -7,13 +7,17 @@ license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+# Work around for an error from wasm-pack. Seems that something is emitting mutable globals, but
+# then wasm-opt refuses to permit them. This resolved it.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-Oz", "--enable-mutable-globals"]
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 base64 = "0.13"
 console_error_panic_hook = "0.1"
-deref-map = { path = "../deref-map" }
 js-sys = "0.3"
 oot-explorer-core = { path = "../oot-explorer-core" }
 oot-explorer-gl = { path = "../oot-explorer-gl" }

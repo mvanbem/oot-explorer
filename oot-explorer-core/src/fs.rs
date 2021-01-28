@@ -1,4 +1,5 @@
 use scoped_owner::ScopedOwner;
+use serde::Serialize;
 use std::fmt::{self, Debug};
 use std::ops::{Add, AddAssign, Range, Sub, SubAssign};
 use thiserror::Error;
@@ -13,7 +14,8 @@ use crate::yaz;
 pub const VROM_ADDR_DESC: TypeDescriptor = TypeDescriptor::Primitive(PrimitiveType::VromAddr);
 
 /// An address in VROM.
-#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
 pub struct VromAddr(pub u32);
 
 impl Debug for VromAddr {

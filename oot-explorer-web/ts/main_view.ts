@@ -3,8 +3,9 @@ import type * as wasm from '../pkg';
 
 import { Container } from './container';
 import { $t } from './dollar_t';
+import { ExploreView } from './explore_view';
 import { Status } from './status';
-import { Wasm, WasmModule } from './wasm';
+import { WasmInterface, WasmModule } from './wasm';
 import { glInitProgram, glInitShader } from './gl_util';
 
 const BACKGROUND_VERTEX_SHADER_SOURCE = `#version 300 es
@@ -159,7 +160,7 @@ export class MainView {
         })!;
 
         document.getElementById('explore')!.addEventListener('click', () => {
-            let exploreView = wasm.ExploreView.new(document, this.ctx);
+            let exploreView = new ExploreView(wasm, this.ctx);
             this.canvas.parentElement!.appendChild(exploreView.element);
         });
 
@@ -303,7 +304,7 @@ export class MainView {
         Status.show('Processing scene...');
         await this.nextStep();
 
-        let processedScene = <Wasm.ProcessSceneResult>this.ctx.processScene(sceneIndex);
+        let processedScene = <WasmInterface.ProcessSceneResult>this.ctx.processScene(sceneIndex);
 
         // Compile shaders for all batches.
         let vertexShader = glInitShader(gl, gl.VERTEX_SHADER, VERTEX_SHADER_SOURCE);

@@ -6,6 +6,7 @@
   --primary-text-color: #fff;
   --secondary-color: #f44336;
   --secondary-text-color: #000;
+  --secondary-light-color: #ff7961;
   --accent-color: #00e676;
   --accent-text-color: #000;
   --error-color: #ba000d;
@@ -282,8 +283,6 @@ button:hover {
 
 .explore-view {
   position: absolute;
-  left: 100px;
-  top: 100px;
   height: 800px;
   box-shadow: var(--shadow);
   border-radius: var(--rounded-corner);
@@ -335,9 +334,11 @@ button:hover {
   transition: background-color 100ms, color 100ms;
 }
 .explore-view-close:hover {
-  background-color: var(--light-overlay);
   background-color: var(--secondary-color);
   color: var(--secondary-text-color);
+}
+.explore-view-close:active {
+  background-color: var(--secondary-light-color);
 }
 
 .explore-view-hexdump {

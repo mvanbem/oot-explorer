@@ -7,6 +7,7 @@ import { ExploreView } from './explore_view';
 import { Status } from './status';
 import { WasmInterface, WasmModule } from './wasm';
 import { glInitProgram, glInitShader } from './gl_util';
+import { WindowManager } from './window_manager';
 
 const BACKGROUND_VERTEX_SHADER_SOURCE = `#version 300 es
 
@@ -139,6 +140,20 @@ export class MainView {
     ctx: wasm.Context;
     touches: Map<number, TouchState>;
     keys: Map<string, boolean>;
+    mouseDragActive: boolean = false;
+    private readonly globalMouseMoveHandler = (e: MouseEvent) => {
+        if (this.mouseDragActive) {
+            this.view.yaw -= 0.005 * e.movementX;
+            this.view.pitch -= 0.005 * e.movementY;
+        }
+    };
+    private readonly globalMouseUpHandler = (e: MouseEvent) => {
+        if (e.button === 0) {
+            this.mouseDragActive = false;
+            window.removeEventListener('mousemove', this.globalMouseMoveHandler);
+            window.removeEventListener('mouseup', this.globalMouseUpHandler);
+        }
+    };
     sceneIndex?: number;
     view: View;
     backgroundProgram: WebGLProgram;
@@ -162,12 +177,15 @@ export class MainView {
         document.getElementById('explore')!.addEventListener('click', () => {
             let exploreView = new ExploreView(wasm, this.ctx);
             this.canvas.parentElement!.appendChild(exploreView.element);
+            WindowManager.add(exploreView);
         });
 
-        this.canvas.addEventListener('mousemove', e => {
-            if (e.buttons & 1) {
-                this.view.yaw -= 0.005 * e.movementX;
-                this.view.pitch -= 0.005 * e.movementY;
+        this.canvas.addEventListener('mousedown', e => {
+            if (e.button === 0) {
+                e.preventDefault();
+                this.mouseDragActive = true;
+                window.addEventListener('mousemove', this.globalMouseMoveHandler);
+                window.addEventListener('mouseup', this.globalMouseUpHandler);
             }
         });
         this.touches = new Map();

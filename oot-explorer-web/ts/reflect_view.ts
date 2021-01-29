@@ -1,7 +1,9 @@
 import type * as Wasm from '../pkg';
 
 import { $t } from './dollar_t';
-import { ClearHighlightCallback, ItemView, SetHighlightCallback } from './item_view';
+import {
+    ClearHighlightCallback, ItemView, SetHighlightCallback, ShowAddrCallback,
+} from './item_view';
 import { WasmModule } from './wasm';
 
 export class ReflectView {
@@ -9,6 +11,7 @@ export class ReflectView {
     rootItem: ItemView;
     onsethighlight?: SetHighlightCallback;
     onclearhighlight?: ClearHighlightCallback;
+    onshowaddr?: ShowAddrCallback;
 
     // TODO: addr, desc parameters? Or should roots be retrieve from wasm endpoints?
     constructor(wasm: WasmModule, ctx: Wasm.Context) {
@@ -24,6 +27,11 @@ export class ReflectView {
         this.rootItem.onclearhighlight = () => {
             if (this.onclearhighlight) {
                 this.onclearhighlight();
+            }
+        };
+        this.rootItem.onshowaddr = addr => {
+            if (this.onshowaddr) {
+                this.onshowaddr(addr);
             }
         };
         this.rootItem.expand();

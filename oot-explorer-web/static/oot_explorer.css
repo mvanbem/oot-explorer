@@ -3,6 +3,7 @@
   --small-shadow: #0008 0 0 6px 0px;
   
   --primary-color: #3f51b5;
+  --primary-color-a0: #3f51b500;
   --primary-text-color: #fff;
   --secondary-color: #f44336;
   --secondary-text-color: #000;
@@ -110,6 +111,7 @@ body {
 }
 
 #container {
+  position: relative;
   background-color: var(--dark-overlay);
   flex-basis: 0;
   flex-grow: 1;
@@ -281,7 +283,7 @@ button:hover {
   margin-bottom: 4px;
 }
 
-.explore-view {
+.window {
   position: absolute;
   height: 800px;
   box-shadow: var(--shadow);
@@ -292,7 +294,17 @@ button:hover {
   flex-flow: column nowrap;
 }
 
-.explore-view-title-bar {
+.window-resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  z-index: 1;
+}
+
+.window-title-bar {
   height: 32px;
   background-color: var(--primary-color);
   color: var(--primary-text-color);
@@ -302,11 +314,15 @@ button:hover {
   flex-flow: row nowrap;
 }
 
-.explore-view-title {
+.window-title {
+  position: relative;
   padding: 0 1em;
-  flex-grow: 1;
+  flex: 0px 1 1;
   user-select: none;
   cursor: move;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 
   display: flex;
   flex-flow: row nowrap;
@@ -315,12 +331,21 @@ button:hover {
 
   transition: background-color 100ms, color 100ms;
 }
-.explore-view-title:hover {
+.window-title:hover {
   background-color: var(--light-overlay);
 }
+.window-title::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  width: 12px;
+  top: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, var(--primary-color-a0), var(--primary-color));
+}
 
-.explore-view-close {
-  width: 32px;
+.window-close {
+  flex: 32px 0 0;
   font: var(--button-font);
   font-weight: bold;
   user-select: none;
@@ -333,26 +358,33 @@ button:hover {
 
   transition: background-color 100ms, color 100ms;
 }
-.explore-view-close:hover {
+.window-close:hover {
   background-color: var(--secondary-color);
   color: var(--secondary-text-color);
 }
-.explore-view-close:active {
+.window-close:active {
   background-color: var(--secondary-light-color);
 }
 
 .explore-view-hexdump {
+  background-color: #fff;
   flex-basis: 0;
   flex-grow: 1;
   flex-shrink: 0;
-  background-color: #fff;
-  font: var(--hex-font);
   padding: 8px;
   overflow-x: auto;
   overflow-y: scroll;
 }
 
+.hexdump {
+  position: relative;
+  background-color: #fff;
+  font: var(--hex-font);
+  overflow: hidden;
+}
+
 .hexdump-row {
+  position: absolute;
   white-space: pre;
 }
 
@@ -379,15 +411,6 @@ button:hover {
   flex-flow: column nowrap;
 
   --tree-size: 16px;
-}
-.explore-view-tree::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: -4px;
-  right: 0;
-  height: 8px;
-  cursor: ns-resize;
 }
 
 .tree-item {

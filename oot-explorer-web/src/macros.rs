@@ -7,7 +7,7 @@ macro_rules! html_template {
     // Parse a bound element.
     (
         @parse {
-            document: $document:ident
+            document: ($document:expr)
             parent: $parent:tt
         }
         let $binding:ident = $tag:ident[$($attr_name:ident = $attr_value:literal)*] {
@@ -23,20 +23,20 @@ macro_rules! html_template {
         $(html_template! { @attr binding: $binding name: $attr_name value: $attr_value })*
         html_template! {
             @parse {
-                document: $document
+                document: ($document)
                 parent: (Some($binding))
             }
             $($body)*
         }
         html_template! { @append_child parent: $parent child: $binding }
 
-        html_template! { @parse { document: $document parent: $parent } $($tail)* }
+        html_template! { @parse { document: ($document) parent: $parent } $($tail)* }
     };
 
     // Parse an unbound element.
     (
         @parse {
-            document: $document:ident
+            document: ($document:expr)
             parent: $parent:tt
         }
         $tag:ident[$($attr_name:ident = $attr_value:literal)*] {
@@ -52,20 +52,20 @@ macro_rules! html_template {
         $(html_template! { @attr binding: element name: $attr_name value: $attr_value })*
         html_template! {
             @parse {
-                document: $document
+                document: ($document)
                 parent: (Some(element))
             }
             $($body)*
         }
         html_template! { @append_child parent: $parent child: element }
 
-        html_template! { @parse { document: $document parent: $parent } $($tail)* }
+        html_template! { @parse { document: ($document) parent: $parent } $($tail)* }
     };
 
     // Parse a text node.
     (
         @parse {
-            document: $document:ident
+            document: ($document:expr)
             parent: $parent:tt
         }
         text($text:expr)
@@ -74,7 +74,7 @@ macro_rules! html_template {
         let text_node = ::web_sys::Document::create_text_node($document, $text);
         html_template! { @append_child parent: $parent child: text_node }
 
-        html_template! { @parse { document: $document parent: $parent } $($tail)* }
+        html_template! { @parse { document: ($document) parent: $parent } $($tail)* }
     };
 
     // Set an attribute or pseudo-attribute.
@@ -102,20 +102,20 @@ macro_rules! html_template {
     };
 
     // Handle the initial invocation when requested to yield a value.
-    ($document:ident, return $($args:tt)*) => {
+    ($document:expr, return $($args:tt)*) => {
         {
-            html_template! { @parse { document: $document parent: (None) } let temp = $($args)* }
+            html_template! { @parse { document: ($document) parent: (None) } let temp = $($args)* }
             temp
         }
     };
 
     // Handle the initial invocation when requested to append to an external parent.
-    ($document:ident, in $parent:ident: $($args:tt)*) => {
-        html_template! { @parse { document: $document parent: (Some($parent)) } $($args)* }
+    ($document:expr, in $parent:ident: $($args:tt)*) => {
+        html_template! { @parse { document: ($document) parent: (Some($parent)) } $($args)* }
     };
 
     // Handle the initial invocation when not requested to yield a value.
-    ($document:ident, $($args:tt)*) => {
-        html_template! { @parse { document: $document parent: (None) } $($args)* }
+    ($document:expr, $($args:tt)*) => {
+        html_template! { @parse { document: ($document) parent: (None) } $($args)* }
     };
 }

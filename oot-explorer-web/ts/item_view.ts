@@ -15,6 +15,7 @@ export interface ReflectItemInfo {
 
 export type SetHighlightCallback = (start: number, end: number) => void;
 export type ClearHighlightCallback = () => void;
+export type ShowAddrCallback = (addr: number) => void;
 
 export class ItemView {
     private info: ReflectItemInfo;
@@ -27,6 +28,7 @@ export class ItemView {
     public element: HTMLElement;
     public onsethighlight?: SetHighlightCallback;
     public onclearhighlight?: ClearHighlightCallback;
+    public onshowaddr?: ShowAddrCallback;
 
     constructor(
         private readonly ctx: Wasm.Context,
@@ -60,6 +62,10 @@ export class ItemView {
             ],
         });
         this.element.classList.add(oddNesting ? 'odd' : 'even');
+        this.header.addEventListener('click', e => {
+            e.stopPropagation();
+            this.handleElementClick();
+        });
 
         this.header.addEventListener('mouseenter', () => this.handleHeaderMouseEnter());
         this.header.addEventListener('mouseleave', () => this.handleHeaderMouseLeave());
@@ -73,7 +79,7 @@ export class ItemView {
 
         // Add a span element for the item's value.
         if (this.info.valueString !== undefined) {
-            this.header.appendChild($t('span', { textContent: this.info.valueString }));
+            this.header.appendChild($t('span', { textContent: ' = ' + this.info.valueString }));
         }
 
         // Add elements for expandable content.
@@ -89,19 +95,25 @@ export class ItemView {
         }
     }
 
-    handleHeaderMouseEnter(): any {
+    handleElementClick() {
+        if (this.onshowaddr) {
+            this.onshowaddr(this.info.vromStart);
+        }
+    }
+
+    handleHeaderMouseEnter() {
         if (this.onsethighlight) {
             this.onsethighlight(this.info.vromStart, this.info.vromEnd);
         }
     }
 
-    handleHeaderMouseLeave(): any {
+    handleHeaderMouseLeave() {
         if (this.onclearhighlight) {
             this.onclearhighlight();
         }
     }
 
-    handleIndicatorClick(): any {
+    handleIndicatorClick() {
         if (this.expanded) {
             // Collapse.
             while (this.contents!.firstChild) {
@@ -110,17 +122,17 @@ export class ItemView {
             this.expanded = false;
             this.indicator!.classList.remove('expanded');
         } else {
-            this._expand();
+            this.expandImpl();
         }
     }
 
     expand() {
         if (this.info.expandable && !this.expanded) {
-            this._expand();
+            this.expandImpl();
         }
     }
 
-    _expand() {
+    private expandImpl() {
         for (let field of this.fields) {
             let fieldView = new ItemView(
                 this.ctx, !this.oddNesting, field.reflect_within_deku_tree_scene(this.ctx));
@@ -133,6 +145,11 @@ export class ItemView {
             fieldView.onclearhighlight = () => {
                 if (this.onclearhighlight) {
                     this.onclearhighlight();
+                }
+            };
+            fieldView.onshowaddr = addr => {
+                if (this.onshowaddr) {
+                    this.onshowaddr(addr);
                 }
             };
         }

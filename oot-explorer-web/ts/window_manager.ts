@@ -14,7 +14,6 @@ export const WindowManager = (() => {
         }
 
         handleResize() {
-            console.log('repositioning all windows');
             for (let window of this.windows) {
                 window.updatePosition();
             }
@@ -52,7 +51,7 @@ export class WMWindow {
     private x: number = 100;
     private y: number = 100;
     private width: number = 400;
-    private height: number = 300;
+    private height: number = 600;
     private resizeHandleDragState?: DragState = undefined;
     private titleDragState?: DragState = undefined;
 

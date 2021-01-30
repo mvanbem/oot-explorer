@@ -5,6 +5,7 @@ use crate::slice::Slice;
 declare_pointer_descriptor!(Collision);
 
 compile_interfaces! {
+    #[size(0x2c)]
     struct Collision {
         i16 x_min @0x00;
         i16 y_min @0x02;

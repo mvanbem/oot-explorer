@@ -400,12 +400,26 @@ fn field_value_string<'scope>(
                             let segment_ptr = <SegmentAddr as Instantiate>::new(data);
                             Ok(Some(format!("({}) {:?}", pointer_desc.name, segment_ptr)))
                         }
-                        Err(_) => Ok(Some(format!("(inaccessible)",))),
+                        Err(_) => Ok(Some(format!("(inaccessible)"))),
                     }
                 }
 
-                // Structs and unions do not have a one-line value string.
-                TypeDescriptor::Struct(_) | TypeDescriptor::Union(_) => Ok(None),
+                TypeDescriptor::Union(union_desc) => {
+                    let discriminant_value = field_value_string(
+                        scope,
+                        fs,
+                        _segment_ctx,
+                        base_addr + union_desc.discriminant_offset,
+                        &StructFieldLocation::Simple { offset: 0 },
+                        union_desc.discriminant_desc,
+                    )
+                    .ok_or_else(|| "(inaccessible)".to_string())?;
+
+                    Ok(Some(format!("{{ {}, .. }}", discriminant_value)))
+                }
+
+                // Structs do not have a one-line value string.
+                TypeDescriptor::Struct(_) => Ok(None),
             }
         }
 

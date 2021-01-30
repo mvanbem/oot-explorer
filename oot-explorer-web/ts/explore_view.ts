@@ -1,9 +1,21 @@
 import type * as Wasm from '../pkg';
 
-import { ReflectView } from './reflect_view';
 import { $t } from './dollar_t';
+import { ItemView } from './item_view';
+import { ReflectView } from './reflect_view';
 import { WasmModule } from './wasm';
 import { WMWindow } from './window_manager';
+
+interface Selection {
+    item: ItemView;
+    start: number;
+    end: number;
+}
+
+interface Highlight {
+    start: number;
+    end: number;
+}
 
 export class ExploreView extends WMWindow {
     private readonly hexdumpContainer: HTMLElement;
@@ -11,6 +23,8 @@ export class ExploreView extends WMWindow {
     private readonly reflect: ReflectView;
 
     private lastScroll: number = 0;
+    private selection?: Selection;
+    private highlight?: Highlight;
 
     constructor(wasm: WasmModule, ctx: Wasm.Context) {
         // TODO: Don't hard-code the title.
@@ -26,9 +40,31 @@ export class ExploreView extends WMWindow {
 
         this.reflect = new ReflectView(wasm, ctx);
         this.element.appendChild(this.reflect.element);
-        this.reflect.onsethighlight = (start, end) => this.hexdump.setHighlight(start, end);
-        this.reflect.onclearhighlight = () => this.hexdump.clearHighlight();
+        this.reflect.onsethighlight = (start, end) => {
+            this.highlight = { start, end };
+            this.refreshMarkings();
+        };
+        this.reflect.onclearhighlight = () => {
+            this.highlight = undefined;
+            this.refreshMarkings();
+        };
         this.reflect.onshowaddr = addr => this.hexdump.scrollToAddr(addr);
+        this.reflect.onselect = (item, start, end) => {
+            this.selection = { item, start, end };
+            this.refreshMarkings();
+            this.reflect.setSelection(item);
+        };
+    }
+
+    private refreshMarkings() {
+        this.hexdump.clearMarkings();
+        if (this.selection !== undefined) {
+            this.hexdump.addSelection(this.selection.start, this.selection.end);
+        }
+        if (this.highlight !== undefined) {
+            this.hexdump.addHighlight(this.highlight.start, this.highlight.end);
+        }
+        this.hexdump.regenerateChildren();
     }
 
     protected onResize() {

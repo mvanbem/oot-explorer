@@ -16,6 +16,7 @@ export interface ReflectItemInfo {
 export type SetHighlightCallback = (start: number, end: number) => void;
 export type ClearHighlightCallback = () => void;
 export type ShowAddrCallback = (addr: number) => void;
+export type SelectCallback = (item: ItemView, start: number, end: number) => void;
 
 export class ItemView {
     private info: ReflectItemInfo;
@@ -24,11 +25,13 @@ export class ItemView {
     private indicator?: HTMLElement;
     private contents?: HTMLElement;
     private expanded?: boolean;
+    private expandedFields: ItemView[] = [];
 
     public element: HTMLElement;
     public onsethighlight?: SetHighlightCallback;
     public onclearhighlight?: ClearHighlightCallback;
     public onshowaddr?: ShowAddrCallback;
+    public onselect?: SelectCallback;
 
     constructor(
         private readonly ctx: Wasm.Context,
@@ -53,9 +56,10 @@ export class ItemView {
                     className: 'tree-item-header',
                     children: [
                         $t('span', {
+                            className: 'tree-item-addr',
                             textContent: formatAddr(this.info.vromStart),
                         }),
-                        $text('  '),
+                        $t('span', { textContent: '  ' }),
                         typeElement = $t('span', { textContent: this.info.typeString }),
                     ],
                 }),
@@ -99,6 +103,9 @@ export class ItemView {
         if (this.onshowaddr) {
             this.onshowaddr(this.info.vromStart);
         }
+        if (this.onselect) {
+            this.onselect(this, this.info.vromStart, this.info.vromEnd);
+        }
     }
 
     handleHeaderMouseEnter() {
@@ -119,6 +126,7 @@ export class ItemView {
             while (this.contents!.firstChild) {
                 this.contents!.removeChild(this.contents!.firstChild);
             }
+            this.expandedFields = [];
             this.expanded = false;
             this.indicator!.classList.remove('expanded');
         } else {
@@ -152,12 +160,31 @@ export class ItemView {
                     this.onshowaddr(addr);
                 }
             };
+            fieldView.onselect = (item, start, end) => {
+                if (this.onselect) {
+                    this.onselect(item, start, end);
+                }
+            };
+            this.expandedFields.push(fieldView);
         }
         this.expanded = true;
         this.indicator!.classList.add('expanded');
     }
+
+    setSelection(item: ItemView) {
+        if (this === item) {
+            this.header.classList.add('select');
+        } else {
+            this.header.classList.remove('select');
+        }
+        // NOTE: Always recurse into fields because setting the highlight also clears any previous
+        // highlight.
+        for (let field of this.expandedFields) {
+            field.setSelection(item);
+        }
+    }
 }
 
 function formatAddr(addr: number): string {
-    return '0x' + addr.toString(16).padStart(8, '0') + '  ';
+    return '0x' + addr.toString(16).padStart(8, '0');
 }

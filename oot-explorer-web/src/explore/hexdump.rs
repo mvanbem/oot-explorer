@@ -19,15 +19,31 @@ const ROW_HEIGHT: u32 = 14;
 /// scrolling.
 const RENDER_MARGIN: u32 = 100;
 
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+enum Marking {
+    None,
+    Selection,
+    Highlight,
+}
+
+impl Marking {
+    fn only_if(self, condition: bool) -> Marking {
+        if condition {
+            self
+        } else {
+            Marking::None
+        }
+    }
+}
+
 #[wasm_bindgen]
 pub struct HexDumpView {
     document: Document,
     _ctx: Arc<Mutex<InnerContext>>,
     element: HtmlElement,
-    highlight: Option<Range<VromAddr>>,
+    markings: Vec<(Marking, Range<VromAddr>)>,
     base_addr: VromAddr,
     data: Box<[u8]>,
-    prev_viewport: Option<Range<u32>>,
     rows: Vec<(Range<VromAddr>, HtmlElement)>,
 }
 
@@ -72,20 +88,15 @@ impl HexDumpView {
             document: document.clone(),
             _ctx: Arc::clone(&ctx.inner),
             element,
-            highlight: None,
+            markings: vec![],
             base_addr,
             data,
-            prev_viewport: None,
             rows: vec![],
         }
     }
 
     #[wasm_bindgen(js_name = regenerateChildren)]
     pub fn regenerate_children(&mut self) {
-        self.regenerate_children_with_force(false);
-    }
-
-    fn regenerate_children_with_force(&mut self, force: bool) {
         // Compute the current viewport.
         let parent = self.element.parent_element().unwrap_throw();
         let viewport = {
@@ -94,14 +105,6 @@ impl HexDumpView {
 
             y_start.saturating_sub(RENDER_MARGIN)..y_end.saturating_add(RENDER_MARGIN)
         };
-
-        // Bail if the viewport hasn't changed.
-        if let Some(prev_viewport) = self.prev_viewport.as_ref() {
-            if viewport == *prev_viewport && !force {
-                return;
-            }
-        }
-        self.prev_viewport = Some(viewport.clone());
 
         // Remove all rows.
         while let Some(child) = self.element.first_child() {
@@ -126,7 +129,7 @@ impl HexDumpView {
                 None => &[],
             };
 
-            let row = make_row(&self.document, data, addr, self.highlight.as_ref());
+            let row = make_row(&self.document, data, addr, &self.markings);
             self.element.append_child(&row).unwrap_throw();
             self.rows.push((addr..(addr + 16), row.clone()));
 
@@ -143,51 +146,21 @@ impl HexDumpView {
         self.element.clone()
     }
 
-    #[wasm_bindgen(js_name = setHighlight)]
-    pub fn js_set_highlight(&mut self, start: u32, end: u32) {
-        self.set_highlight(Some(VromAddr(start)..VromAddr(end)));
+    #[wasm_bindgen(js_name = addHighlight)]
+    pub fn add_highlight(&mut self, start: u32, end: u32) {
+        self.markings
+            .push((Marking::Highlight, VromAddr(start)..VromAddr(end)));
     }
 
-    #[wasm_bindgen(js_name = clearHighlight)]
-    pub fn js_clear_highlight(&mut self) {
-        self.set_highlight(None);
+    #[wasm_bindgen(js_name = addSelection)]
+    pub fn add_selection(&mut self, start: u32, end: u32) {
+        self.markings
+            .push((Marking::Selection, VromAddr(start)..VromAddr(end)));
     }
 
-    fn set_highlight(&mut self, highlight: Option<Range<VromAddr>>) {
-        if highlight == self.highlight {
-            return;
-        }
-
-        self.highlight = highlight;
-        self.regenerate_children_with_force(true);
-
-        // TODO: Update a smaller set of rows.
-
-        // for (offset, old_row) in (0..0x0000da10).step_by(0x10).zip(self.rows.iter_mut()) {
-        //     let addr = self.base_addr + offset;
-        //     let row_range = addr..addr + 16;
-        //     let old_rel = range_relation(self.highlight.as_ref(), &row_range);
-        //     let new_rel = range_relation(highlight.as_ref(), &row_range);
-        //     if old_rel != new_rel || new_rel == RangeRelation::CrossesReference {
-        //         // The highlight change might affect this row.
-        //         let new_row = make_row(
-        //             &self.document,
-        //             &self.data[offset as usize..],
-        //             addr,
-        //             highlight.as_ref(),
-        //         );
-
-        //         // Replace the row element by inserting the new element before the old one and then
-        //         // removing the old one.
-        //         self.element
-        //             .insert_before(&new_row, Some(&old_row.element))
-        //             .unwrap_throw();
-        //         self.element.remove_child(&old_row.element).unwrap_throw();
-
-        //         // Finally, overwrite the old row.
-        //         *old_row = new_row;
-        //     }
-        // }
+    #[wasm_bindgen(js_name = clearMarkings)]
+    pub fn clear_markings(&mut self) {
+        self.markings.clear();
     }
 
     #[wasm_bindgen(js_name = scrollToAddr)]
@@ -225,65 +198,52 @@ impl HexDumpView {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
-#[allow(dead_code)] // I intend to reuse this eventually.
-enum RangeRelation {
-    OutsideReference,
-    CrossesReference,
-    InsideReference,
-}
-
-#[allow(dead_code)] // I intend to reuse this eventually.
-fn range_relation(reference: Option<&Range<VromAddr>>, test: &Range<VromAddr>) -> RangeRelation {
-    match reference {
-        Some(reference) => {
-            if test.end <= reference.start || reference.end <= test.start {
-                RangeRelation::OutsideReference
-            } else if reference.start <= test.start && test.end <= reference.end {
-                RangeRelation::InsideReference
-            } else {
-                RangeRelation::CrossesReference
-            }
-        }
-        None => RangeRelation::OutsideReference,
-    }
-}
-
 fn make_row(
     document: &Document,
     data: &[u8],
     addr: VromAddr,
-    highlight: Option<&Range<VromAddr>>,
+    markings: &[(Marking, Range<VromAddr>)],
 ) -> HtmlElement {
     let element = html_template!(document, return div[class="hexdump-row"] {});
 
     // Start with the address.
     let mut text = format!("{:08x}", addr.0);
-    let flush = |text: &mut String, in_highlight| {
+    let flush = |text: &mut String, marking| {
         if !text.is_empty() {
-            if in_highlight {
-                html_template!(document, in element:
-                    span[class="hexdump-highlight"] { text(&text) }
-                );
-            } else {
-                html_template!(document, in element: text(&text));
+            match marking {
+                Marking::None => {
+                    html_template!(document, in element: text(&text));
+                }
+                Marking::Selection => {
+                    html_template!(document, in element:
+                        span[class="hexdump-select"] { text(&text) }
+                    );
+                }
+                Marking::Highlight => {
+                    html_template!(document, in element:
+                        span[class="hexdump-highlight"] { text(&text) }
+                    );
+                }
             }
             text.clear();
         }
     };
 
     // Append each byte with a pattern of spaces between.
-    let mut in_highlight = false;
+    let mut current_marking = Marking::None;
     for i in 0..16 {
         // Big spaces every four bytes, including before the first one.
         write!(&mut text, "{}", if (i & 3) == 0 { "  " } else { " " },).unwrap_throw();
 
         // Start highlighting if it's time.
-        if let Some(highlight) = highlight {
-            if !in_highlight && highlight.contains(&(addr + i)) {
-                flush(&mut text, false);
-                in_highlight = true;
-            }
+        let next_marking = markings
+            .iter()
+            .map(|marking| marking.0.only_if(marking.1.contains(&(addr + i))))
+            .max()
+            .unwrap_or(Marking::None);
+        if next_marking != current_marking {
+            flush(&mut text, current_marking);
+            current_marking = next_marking;
         }
 
         // Append the byte's value, if accessible, or a placeholder.
@@ -293,14 +253,17 @@ fn make_row(
         }
 
         // End highlighting if it's time.
-        if let Some(highlight) = highlight {
-            if in_highlight && !highlight.contains(&(addr + i + 1)) {
-                flush(&mut text, true);
-                in_highlight = false;
-            }
+        let next_marking = markings
+            .iter()
+            .map(|marking| marking.0.only_if(marking.1.contains(&(addr + i + 1))))
+            .max()
+            .unwrap_or(Marking::None);
+        if next_marking != current_marking {
+            flush(&mut text, current_marking);
+            current_marking = Marking::None;
         }
     }
 
-    flush(&mut text, in_highlight);
+    flush(&mut text, current_marking);
     element
 }

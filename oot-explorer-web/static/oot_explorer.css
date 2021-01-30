@@ -1,17 +1,21 @@
 :root {
   --shadow: #0008 0 0 10px 0px;
   --small-shadow: #0008 0 0 6px 0px;
-  
+
   --primary-color: #3f51b5;
   --primary-color-a0: #3f51b500;
+  --primary-light-color: #757de8;
   --primary-text-color: #fff;
+
   --secondary-color: #f44336;
-  --secondary-text-color: #000;
   --secondary-light-color: #ff7961;
-  --accent-color: #00e676;
+  --secondary-text-color: #000;
+
+  --accent-color: #ffea00;
   --accent-text-color: #000;
+
   --error-color: #ba000d;
-  
+
   --light-overlay: #fff2;
   --dark-overlay: #0002;
 
@@ -388,9 +392,18 @@ button:hover {
   white-space: pre;
 }
 
+.hexdump-select {
+  background-color: var(--primary-color);
+  color: var(--primary-text-color);
+  font-weight: bold;
+  border-radius: var(--rounded-corner);
+  padding: 1px 3px;
+  margin: -1px -3px;
+}
 .hexdump-highlight {
   background-color: var(--accent-color);
   color: var(--accent-text-color);
+  font-weight: bold;
   border-radius: var(--rounded-corner);
   padding: 1px 3px;
   margin: -1px -3px;
@@ -486,9 +499,18 @@ button:hover {
 .tree-item-header:hover .tree-item-addr {
   background-color: var(--accent-color);
   color: var(--accent-text-color);
+  font-weight: bold;
   border-radius: var(--rounded-corner);
   padding: 1px 3px;
   margin: -1px -3px;
+}
+.tree-item-header.select {
+  background-color: var(--primary-color);
+  color: var(--primary-text-color);
+  font-weight: bold;
+  border-radius: var(--rounded-corner);
+  padding: 1px 3px;
+  margin: -1px 0 -1px -3px;
 }
 
 .tree-item-contents {

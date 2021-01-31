@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "deref-map",
     "oot-explorer-demo",
     "oot-explorer-expr",
     "oot-explorer-game-data",

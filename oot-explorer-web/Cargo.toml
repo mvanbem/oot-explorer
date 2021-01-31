@@ -19,9 +19,13 @@ crate-type = ["cdylib", "rlib"]
 base64 = "0.13"
 console_error_panic_hook = "0.1"
 js-sys = "0.3"
-oot-explorer-core = { path = "../oot-explorer-core" }
+oot-explorer-game-data = { path = "../oot-explorer-game-data" }
 oot-explorer-gl = { path = "../oot-explorer-gl" }
-scoped-owner = { path = "../scoped-owner" }
+oot-explorer-read = { path = "../oot-explorer-read" }
+oot-explorer-reflect = { path = "../oot-explorer-reflect" }
+oot-explorer-rom = { path = "../oot-explorer-rom" }
+oot-explorer-segment = { path = "../oot-explorer-segment" }
+oot-explorer-vrom = { path = "../oot-explorer-vrom" }
 serde = { version = "1", features = ["derive"] }
 serde_bytes = "0.11"
 serde-wasm-bindgen = "0.1"

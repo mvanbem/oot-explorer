@@ -298,6 +298,7 @@ export class MainView {
         })();
 
         this.ctx = new wasm.Context(this.gl, new Uint8Array(rom));
+        this.ctx.decompress();
         this.batches = [];
         this.currentResolves = [];
         this.nextResolves = [];

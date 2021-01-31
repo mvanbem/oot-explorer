@@ -231,6 +231,8 @@ impl DisplayListInterpreter {
                             )
                             .unwrap(),
                             Err(_) => {
+                                *self.unmapped_matrices.entry(segment_addr).or_default() += 1;
+
                                 // NOTE: This doesn't seem right at all, but I can't get Jabu's main
                                 // room to look right unless matrix loads from unmapped regions are
                                 // totally skipped. Working with an identity matrix messes it up badly.

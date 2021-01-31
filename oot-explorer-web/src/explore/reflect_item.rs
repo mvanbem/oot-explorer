@@ -1,14 +1,9 @@
-use oot_explorer_core::fs::{LazyFileSystem, VromAddr};
-use oot_explorer_core::reflect::instantiate::Instantiate;
-use oot_explorer_core::reflect::primitive::PrimitiveType;
-use oot_explorer_core::reflect::sized::ReflectSized;
-use oot_explorer_core::reflect::struct_::StructFieldLocation;
-use oot_explorer_core::reflect::type_::TypeDescriptor;
-use oot_explorer_core::rom::Rom;
-use oot_explorer_core::scene::SCENE_DESC;
-use oot_explorer_core::segment::{Segment, SegmentAddr, SegmentTable};
-use oot_explorer_core::versions::oot_ntsc_10;
-use scoped_owner::ScopedOwner;
+use oot_explorer_game_data::scene::SCENE_DESC;
+use oot_explorer_game_data::versions::oot_ntsc_10;
+use oot_explorer_read::{FromVrom, Layout, VromProxy};
+use oot_explorer_reflect::{PrimitiveType, StructFieldLocation, TypeDescriptor};
+use oot_explorer_segment::{Segment, SegmentAddr, SegmentTable};
+use oot_explorer_vrom::{Vrom, VromAddr};
 use serde::Serialize;
 use std::fmt::Display;
 use std::ops::Range;
@@ -44,12 +39,12 @@ impl ReflectResult {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReflectItemInfo {
-    base_addr: VromAddr,
+    base_addr: u32,
     field_name: Option<String>,
     type_string: String,
     value_string: Option<String>,
-    vrom_start: VromAddr,
-    vrom_end: VromAddr,
+    vrom_start: u32,
+    vrom_end: u32,
 }
 
 #[wasm_bindgen]
@@ -65,33 +60,30 @@ pub struct ReflectFieldInfo {
 impl ReflectFieldInfo {
     pub fn reflect_within_deku_tree_scene(&self, ctx: &Context) -> ReflectResult {
         let ctx_ref = ctx.inner.lock().unwrap_throw();
-        ScopedOwner::with_scope(|scope| {
-            let mut fs = LazyFileSystem::new(
-                Rom::new(&ctx_ref.rom_data),
-                oot_ntsc_10::FILE_TABLE_ROM_ADDR,
-            );
-            let scene_table = oot_ntsc_10::get_scene_table(scope, &mut fs);
-            let scene = scene_table
-                .iter()
-                .next()
-                .unwrap_throw()
-                .scene(scope, &mut fs);
-            let segment_ctx = {
-                let mut segment_ctx = SegmentTable::new();
-                segment_ctx.set(Segment::SCENE, scene.data(), scene.vrom_range());
-                segment_ctx
-            };
+        let vrom = ctx_ref.vrom.as_ref().unwrap_throw().borrow();
 
-            reflect_field(
-                scope,
-                &mut fs,
-                &segment_ctx,
-                self.base_addr,
-                self.name.clone(),
-                &self.location,
-                self.desc,
-            )
-        })
+        let scene_table =
+            oot_ntsc_10::get_scene_table(ctx_ref.file_table.as_ref().unwrap_throw()).unwrap_throw();
+        let scene = scene_table
+            .iter(vrom)
+            .next()
+            .unwrap_throw()
+            .unwrap_throw()
+            .scene(vrom)
+            .unwrap_throw()
+            .into_inner();
+        let segment_table = SegmentTable::new()
+            .with(Segment::SCENE, scene.addr())
+            .unwrap_throw();
+
+        reflect_field(
+            vrom,
+            &segment_table,
+            self.base_addr,
+            self.name.clone(),
+            &self.location,
+            self.desc,
+        )
     }
 }
 
@@ -101,39 +93,35 @@ pub fn reflect_inside_the_deku_tree_scene(ctx: &Context) -> ReflectResult {
     // TODO: This is very hard-coded. Don't do this.
 
     let ctx_ref = ctx.inner.lock().unwrap_throw();
-    ScopedOwner::with_scope(|scope| {
-        let mut fs = LazyFileSystem::new(
-            Rom::new(&ctx_ref.rom_data),
-            oot_ntsc_10::FILE_TABLE_ROM_ADDR,
-        );
-        let scene_table = oot_ntsc_10::get_scene_table(scope, &mut fs);
-        let scene = scene_table
-            .iter()
-            .next()
-            .unwrap_throw()
-            .scene(scope, &mut fs);
-        let segment_ctx = {
-            let mut segment_ctx = SegmentTable::new();
-            segment_ctx.set(Segment::SCENE, scene.data(), scene.vrom_range());
-            segment_ctx
-        };
+    let vrom = ctx_ref.vrom.as_ref().unwrap_throw().borrow();
 
-        reflect_field(
-            scope,
-            &mut fs,
-            &segment_ctx,
-            scene.addr(),
-            None,
-            &StructFieldLocation::Simple { offset: 0 },
-            SCENE_DESC,
-        )
-    })
+    let scene_table =
+        oot_ntsc_10::get_scene_table(ctx_ref.file_table.as_ref().unwrap_throw()).unwrap_throw();
+    let scene = scene_table
+        .iter(vrom)
+        .next()
+        .unwrap_throw()
+        .unwrap_throw()
+        .scene(vrom)
+        .unwrap_throw()
+        .into_inner();
+    let segment_ctx = SegmentTable::new()
+        .with(Segment::SCENE, scene.addr())
+        .unwrap_throw();
+
+    reflect_field(
+        vrom,
+        &segment_ctx,
+        scene.addr(),
+        None,
+        &StructFieldLocation::Simple { offset: 0 },
+        SCENE_DESC,
+    )
 }
 
-fn reflect_field<'scope>(
-    scope: &'scope ScopedOwner,
-    fs: &mut LazyFileSystem<'scope>,
-    segment_ctx: &SegmentTable<'scope>,
+fn reflect_field(
+    vrom: Vrom<'_>,
+    segment_ctx: &SegmentTable,
     base_addr: VromAddr,
     field_name: Option<String>,
     location: &StructFieldLocation,
@@ -148,26 +136,25 @@ fn reflect_field<'scope>(
         };
 
     let vrom_range = get_field_vrom_range(base_addr, &location, desc);
-    let value_string = field_value_string(scope, fs, segment_ctx, base_addr, &location, desc);
-    let contents = contents(scope, fs, segment_ctx, base_addr, &location, desc);
+    let value_string = field_value_string(vrom, segment_ctx, base_addr, &location, desc);
+    let contents = contents(vrom, segment_ctx, base_addr, &location, desc);
 
     ReflectResult {
         info: ReflectItemInfo {
-            base_addr,
+            base_addr: base_addr.0,
             field_name,
             type_string,
             value_string,
-            vrom_start: vrom_range.start,
-            vrom_end: vrom_range.end,
+            vrom_start: vrom_range.start.0,
+            vrom_end: vrom_range.end.0,
         },
         fields: contents,
     }
 }
 
-pub fn contents<'scope>(
-    scope: &'scope ScopedOwner,
-    fs: &mut LazyFileSystem<'scope>,
-    segment_ctx: &SegmentTable<'scope>,
+pub fn contents(
+    vrom: Vrom<'_>,
+    segment_ctx: &SegmentTable,
     base_addr: VromAddr,
     location: &StructFieldLocation,
     desc: TypeDescriptor,
@@ -177,8 +164,7 @@ pub fn contents<'scope>(
             // This instance represents a simple field. Dig in and add any of its fields.
             let mut field_infos = vec![];
             add_field_infos_for_fields(
-                scope,
-                fs,
+                vrom,
                 segment_ctx,
                 desc,
                 base_addr + *offset,
@@ -195,19 +181,17 @@ pub fn contents<'scope>(
 
             // Retrieve the count.
             let count = count_desc
-                .read_as_u32(scope, fs, base_addr + *count_offset)
+                .read_as_u32(vrom, base_addr + *count_offset)
                 .expect("not ready to make this robust yet");
 
             // Retrieve the initial pointer.
             let ptr_addr = base_addr + *ptr_offset;
-            let segment_ptr = <SegmentAddr as Instantiate>::new(
-                fs.get_virtual_slice(scope, ptr_addr..ptr_addr + 4)
-                    .expect("not ready to make this robust yet"),
-            );
+            let segment_ptr =
+                SegmentAddr::from_vrom(vrom, ptr_addr).expect("not ready to make this robust yet");
+
             let mut vrom_ptr = segment_ctx
-                .resolve_vrom(segment_ptr)
-                .expect("not ready to make this robust yet")
-                .start;
+                .resolve(segment_ptr)
+                .expect("not ready to make this robust yet");
 
             // Add a field for each value in the slice.
             let mut field_infos = vec![];
@@ -246,7 +230,7 @@ pub fn contents<'scope>(
                     desc,
                 });
 
-                if is_end(scope, fs, ptr) {
+                if is_end(vrom, ptr) {
                     break;
                 }
 
@@ -267,9 +251,7 @@ fn get_field_vrom_range(
 ) -> Range<VromAddr> {
     let (offset, known_size) = match location {
         StructFieldLocation::Simple { offset } => (*offset, None),
-        StructFieldLocation::Slice { ptr_offset, .. } => {
-            (*ptr_offset, Some(SegmentAddr::SIZE as u32))
-        }
+        StructFieldLocation::Slice { ptr_offset, .. } => (*ptr_offset, Some(SegmentAddr::SIZE)),
         StructFieldLocation::InlineDelimitedList { offset } => (*offset, None),
     };
 
@@ -280,10 +262,9 @@ fn get_field_vrom_range(
     }
 }
 
-fn add_field_infos_for_fields<'scope>(
-    scope: &'scope ScopedOwner,
-    fs: &mut LazyFileSystem<'scope>,
-    segment_ctx: &SegmentTable<'scope>,
+fn add_field_infos_for_fields(
+    vrom: Vrom<'_>,
+    segment_ctx: &SegmentTable,
     desc: TypeDescriptor,
     addr: VromAddr,
     field_infos: &mut Vec<ReflectFieldInfo>,
@@ -311,32 +292,32 @@ fn add_field_infos_for_fields<'scope>(
 
             // If the discriminant is accessible and known, recurse to add items for each field in
             // the variant.
-            let discriminant = match union_desc.discriminant_desc.read_as_u32(
-                scope,
-                fs,
-                addr + union_desc.discriminant_offset,
-            ) {
-                Some(discriminant) => discriminant,
-                None => return,
+            let discriminant = match union_desc
+                .discriminant_desc
+                .read_as_u32(vrom, addr + union_desc.discriminant_offset)
+                .expect("union discriminants must be readable as u32")
+            {
+                Ok(discriminant) => discriminant,
+                Err(_) => return,
             };
             if let Ok(index) = union_desc
                 .variants
                 .binary_search_by_key(&discriminant, |&(x, _)| x)
             {
                 let variant_desc = union_desc.variants[index].1;
-                add_field_infos_for_fields(scope, fs, segment_ctx, variant_desc, addr, field_infos);
+                add_field_infos_for_fields(vrom, segment_ctx, variant_desc, addr, field_infos);
             }
         }
 
         TypeDescriptor::Pointer(pointer_desc) => {
             // TODO: Add pseudo-items for failure to dereference a pointer.
 
-            let segment_ptr = match fs.get_virtual_slice(scope, addr..addr + 4) {
-                Ok(data) => <SegmentAddr as Instantiate>::new(data),
+            let segment_ptr = match SegmentAddr::from_vrom(vrom, addr) {
+                Ok(segment_ptr) => segment_ptr,
                 Err(_) => return,
             };
-            let vrom_ptr = match segment_ctx.resolve_vrom(segment_ptr) {
-                Ok(range) => range.start,
+            let vrom_ptr = match segment_ctx.resolve(segment_ptr) {
+                Ok(vrom_ptr) => vrom_ptr,
                 Err(_) => return,
             };
 
@@ -354,10 +335,9 @@ fn add_field_infos_for_fields<'scope>(
     }
 }
 
-fn field_value_string<'scope>(
-    scope: &'scope ScopedOwner,
-    fs: &mut LazyFileSystem<'scope>,
-    _segment_ctx: &SegmentTable<'scope>,
+fn field_value_string(
+    vrom: Vrom<'_>,
+    _segment_ctx: &SegmentTable,
     base_addr: VromAddr,
     location: &StructFieldLocation,
     desc: TypeDescriptor,
@@ -368,7 +348,7 @@ fn field_value_string<'scope>(
             match desc {
                 TypeDescriptor::Enum(enum_desc) => {
                     let value = enum_desc
-                        .read_as_u32(scope, fs, field_addr)
+                        .read_as_u32(vrom, field_addr)
                         .map_err(|_| format!("(inaccessible)"))?;
                     let index = enum_desc
                         .values
@@ -383,21 +363,20 @@ fn field_value_string<'scope>(
                 TypeDescriptor::Bitfield(_) => Ok(Some(format!("(bitfields not implemented)"))),
 
                 TypeDescriptor::Primitive(primitive) => match primitive {
-                    PrimitiveType::Bool => fetch_and_display::<bool>(scope, fs, field_addr),
-                    PrimitiveType::U8 => fetch_and_display::<u8>(scope, fs, field_addr),
-                    PrimitiveType::I8 => fetch_and_display::<i8>(scope, fs, field_addr),
-                    PrimitiveType::U16 => fetch_and_display::<u16>(scope, fs, field_addr),
-                    PrimitiveType::I16 => fetch_and_display::<i16>(scope, fs, field_addr),
-                    PrimitiveType::U32 => fetch_and_display::<u32>(scope, fs, field_addr),
-                    PrimitiveType::I32 => fetch_and_display::<i32>(scope, fs, field_addr),
+                    PrimitiveType::Bool => fetch_and_display::<bool>(vrom, field_addr),
+                    PrimitiveType::U8 => fetch_and_display::<u8>(vrom, field_addr),
+                    PrimitiveType::I8 => fetch_and_display::<i8>(vrom, field_addr),
+                    PrimitiveType::U16 => fetch_and_display::<u16>(vrom, field_addr),
+                    PrimitiveType::I16 => fetch_and_display::<i16>(vrom, field_addr),
+                    PrimitiveType::U32 => fetch_and_display::<u32>(vrom, field_addr),
+                    PrimitiveType::I32 => fetch_and_display::<i32>(vrom, field_addr),
                     PrimitiveType::VromAddr => Ok(None),
                     PrimitiveType::SegmentAddr => Ok(None),
                 },
 
                 TypeDescriptor::Pointer(pointer_desc) => {
-                    match fs.get_virtual_slice(scope, field_addr..field_addr + 4) {
-                        Ok(data) => {
-                            let segment_ptr = <SegmentAddr as Instantiate>::new(data);
+                    match SegmentAddr::from_vrom(vrom, field_addr) {
+                        Ok(segment_ptr) => {
                             Ok(Some(format!("({}) {:?}", pointer_desc.name, segment_ptr)))
                         }
                         Err(_) => Ok(Some(format!("(inaccessible)"))),
@@ -406,8 +385,7 @@ fn field_value_string<'scope>(
 
                 TypeDescriptor::Union(union_desc) => {
                     let discriminant_value = field_value_string(
-                        scope,
-                        fs,
+                        vrom,
                         _segment_ctx,
                         base_addr + union_desc.discriminant_offset,
                         &StructFieldLocation::Simple { offset: 0 },
@@ -428,13 +406,13 @@ fn field_value_string<'scope>(
             count_desc,
             ptr_offset,
         } => {
-            let count = match count_desc.read_as_u32(scope, fs, base_addr + *count_offset) {
+            let count = match count_desc.read_as_u32(vrom, base_addr + *count_offset) {
                 Ok(count) => format!("{}", count),
                 Err(_) => format!("(inaccessible)"),
             };
             let ptr_addr = base_addr + *ptr_offset;
-            let ptr = match fs.get_virtual_slice(scope, ptr_addr..ptr_addr + 4) {
-                Ok(data) => format!("{:?}", <SegmentAddr as Instantiate>::new(data)),
+            let ptr = match SegmentAddr::from_vrom(vrom, ptr_addr) {
+                Ok(vrom_addr) => format!("{:?}", vrom_addr),
                 Err(_) => format!("(inaccessible)"),
             };
             Ok(Some(format!("({}[{}]*) {}", desc.name(), count, ptr)))
@@ -450,16 +428,12 @@ fn field_value_string<'scope>(
     }
 }
 
-fn fetch_and_display<'scope, T>(
-    scope: &'scope ScopedOwner,
-    fs: &mut LazyFileSystem<'scope>,
-    addr: VromAddr,
-) -> Result<Option<String>, String>
+fn fetch_and_display<T>(vrom: Vrom<'_>, addr: VromAddr) -> Result<Option<String>, String>
 where
-    T: Display + Instantiate<'scope> + ReflectSized,
+    T: Display + FromVrom + Layout,
 {
-    let data = fs
-        .get_virtual_slice(scope, addr..addr + <T as ReflectSized>::SIZE as u32)
-        .map_err(|_| format!("(inaccessible)"))?;
-    Ok(Some(format!("{}", <T as Instantiate>::new(data))))
+    match T::from_vrom(vrom, addr) {
+        Ok(value) => Ok(Some(format!("{}", value))),
+        Err(_) => Err(format!("(inaccessible)")),
+    }
 }

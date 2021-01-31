@@ -25,6 +25,7 @@ export class ExploreView extends WMWindow {
     private lastScroll: number = 0;
     private selection?: Selection;
     private highlight?: Highlight;
+    private refreshMarkingsScheduled: boolean = false;
 
     constructor(wasm: WasmModule, ctx: Wasm.Context) {
         // TODO: Don't hard-code the title.
@@ -42,18 +43,28 @@ export class ExploreView extends WMWindow {
         this.element.appendChild(this.reflect.element);
         this.reflect.onsethighlight = (start, end) => {
             this.highlight = { start, end };
-            this.refreshMarkings();
+            this.scheduleRefreshMarkings();
         };
         this.reflect.onclearhighlight = () => {
             this.highlight = undefined;
-            this.refreshMarkings();
+            this.scheduleRefreshMarkings();
         };
         this.reflect.onshowaddr = addr => this.hexdump.scrollToAddr(addr);
         this.reflect.onselect = (item, start, end) => {
             this.selection = { item, start, end };
-            this.refreshMarkings();
+            this.scheduleRefreshMarkings();
             this.reflect.setSelection(item);
         };
+    }
+
+    private scheduleRefreshMarkings() {
+        if (!this.refreshMarkingsScheduled) {
+            window.requestAnimationFrame(() => {
+                this.refreshMarkingsScheduled = false;
+                this.refreshMarkings();
+            });
+            this.refreshMarkingsScheduled = true;
+        }
     }
 
     private refreshMarkings() {

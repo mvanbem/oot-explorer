@@ -333,7 +333,7 @@ button:hover {
   justify-content: flex-start;
   align-items: center;
 
-  transition: background-color 100ms, color 100ms;
+  transition: background-color 100ms;
 }
 .window-title:hover {
   background-color: var(--light-overlay);
@@ -346,6 +346,10 @@ button:hover {
   top: 0;
   bottom: 0;
   background: linear-gradient(90deg, var(--primary-color-a0), var(--primary-color));
+  transition: opacity 100ms;
+}
+.window-title:hover::after {
+  opacity: 0;
 }
 
 .window-close {

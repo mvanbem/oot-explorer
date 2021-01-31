@@ -1,4 +1,5 @@
 use oot_explorer_rom::RomAddr;
+use oot_explorer_segment::SegmentAddr;
 use oot_explorer_vrom::{Vrom, VromAddr};
 
 use crate::ReadError;
@@ -42,6 +43,10 @@ impl Layout for RomAddr {
 }
 
 impl Layout for VromAddr {
+    const SIZE: u32 = 4;
+}
+
+impl Layout for SegmentAddr {
     const SIZE: u32 = 4;
 }
 

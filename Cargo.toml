@@ -10,5 +10,5 @@ members = [
     "oot-explorer-rom",
     "oot-explorer-segment",
     "oot-explorer-vrom",
-    # "oot-explorer-web",
+    "oot-explorer-web",
 ]

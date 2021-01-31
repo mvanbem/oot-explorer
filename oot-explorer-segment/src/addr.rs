@@ -1,5 +1,4 @@
 use std::fmt::{self, Debug, Formatter};
-// use std::ops::{Add, Sub};
 
 use crate::Segment;
 
@@ -35,22 +34,3 @@ impl SegmentAddr {
         }
     }
 }
-
-// impl Add<u32> for SegmentAddr {
-//     type Output = SegmentAddr;
-
-//     fn add(self, rhs: u32) -> SegmentAddr {
-//         let result = SegmentAddr(self.0 + rhs);
-//         assert_eq!(result.segment(), self.segment());
-//         result
-//     }
-// }
-
-// impl Sub for SegmentAddr {
-//     type Output = u32;
-
-//     fn sub(self, rhs: SegmentAddr) -> u32 {
-//         assert_eq!(self.segment(), rhs.segment());
-//         self.0 - rhs.0
-//     }
-// }

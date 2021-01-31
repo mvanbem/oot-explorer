@@ -4,7 +4,7 @@ use crate::scene::Scene;
 use oot_explorer_read::{ReadError, Slice};
 use oot_explorer_reflect::{RangeSourced, U8_DESC, VROM_ADDR_DESC};
 use oot_explorer_rom::RomAddr;
-use oot_explorer_vrom::{FileIndex, FileTable, Vrom, VromAddr};
+use oot_explorer_vrom::{FileIndex, FileTable, GetFileError, Vrom, VromAddr};
 
 pub const FILE_TABLE_ROM_ADDR: RomAddr = RomAddr(0x00007430);
 
@@ -12,7 +12,7 @@ pub const SCENE_TABLE_FILE_INDEX: FileIndex = FileIndex(0x1b);
 pub const SCENE_TABLE_OFFSET: u32 = 0xea440;
 pub const SCENE_TABLE_COUNT: u32 = 101;
 
-pub fn get_scene_table(file_table: &FileTable) -> Result<Slice<SceneTableEntry>, ReadError> {
+pub fn get_scene_table(file_table: &FileTable) -> Result<Slice<SceneTableEntry>, GetFileError> {
     Ok(Slice::new(
         file_table.file_vrom_range(SCENE_TABLE_FILE_INDEX)?.start + SCENE_TABLE_OFFSET,
         SCENE_TABLE_COUNT,

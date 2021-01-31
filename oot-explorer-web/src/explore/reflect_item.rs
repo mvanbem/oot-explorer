@@ -6,7 +6,7 @@ use oot_explorer_core::reflect::struct_::StructFieldLocation;
 use oot_explorer_core::reflect::type_::TypeDescriptor;
 use oot_explorer_core::rom::Rom;
 use oot_explorer_core::scene::SCENE_DESC;
-use oot_explorer_core::segment::{Segment, SegmentAddr, SegmentCtx};
+use oot_explorer_core::segment::{Segment, SegmentAddr, SegmentTable};
 use oot_explorer_core::versions::oot_ntsc_10;
 use scoped_owner::ScopedOwner;
 use serde::Serialize;
@@ -77,7 +77,7 @@ impl ReflectFieldInfo {
                 .unwrap_throw()
                 .scene(scope, &mut fs);
             let segment_ctx = {
-                let mut segment_ctx = SegmentCtx::new();
+                let mut segment_ctx = SegmentTable::new();
                 segment_ctx.set(Segment::SCENE, scene.data(), scene.vrom_range());
                 segment_ctx
             };
@@ -113,7 +113,7 @@ pub fn reflect_inside_the_deku_tree_scene(ctx: &Context) -> ReflectResult {
             .unwrap_throw()
             .scene(scope, &mut fs);
         let segment_ctx = {
-            let mut segment_ctx = SegmentCtx::new();
+            let mut segment_ctx = SegmentTable::new();
             segment_ctx.set(Segment::SCENE, scene.data(), scene.vrom_range());
             segment_ctx
         };
@@ -133,7 +133,7 @@ pub fn reflect_inside_the_deku_tree_scene(ctx: &Context) -> ReflectResult {
 fn reflect_field<'scope>(
     scope: &'scope ScopedOwner,
     fs: &mut LazyFileSystem<'scope>,
-    segment_ctx: &SegmentCtx<'scope>,
+    segment_ctx: &SegmentTable<'scope>,
     base_addr: VromAddr,
     field_name: Option<String>,
     location: &StructFieldLocation,
@@ -167,7 +167,7 @@ fn reflect_field<'scope>(
 pub fn contents<'scope>(
     scope: &'scope ScopedOwner,
     fs: &mut LazyFileSystem<'scope>,
-    segment_ctx: &SegmentCtx<'scope>,
+    segment_ctx: &SegmentTable<'scope>,
     base_addr: VromAddr,
     location: &StructFieldLocation,
     desc: TypeDescriptor,
@@ -283,7 +283,7 @@ fn get_field_vrom_range(
 fn add_field_infos_for_fields<'scope>(
     scope: &'scope ScopedOwner,
     fs: &mut LazyFileSystem<'scope>,
-    segment_ctx: &SegmentCtx<'scope>,
+    segment_ctx: &SegmentTable<'scope>,
     desc: TypeDescriptor,
     addr: VromAddr,
     field_infos: &mut Vec<ReflectFieldInfo>,
@@ -357,7 +357,7 @@ fn add_field_infos_for_fields<'scope>(
 fn field_value_string<'scope>(
     scope: &'scope ScopedOwner,
     fs: &mut LazyFileSystem<'scope>,
-    _segment_ctx: &SegmentCtx<'scope>,
+    _segment_ctx: &SegmentTable<'scope>,
     base_addr: VromAddr,
     location: &StructFieldLocation,
     desc: TypeDescriptor,

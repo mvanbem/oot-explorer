@@ -1,8 +1,6 @@
+use oot_explorer_game_data::gbi::{Qu1_11, TextureDepth, TextureFormat};
+use oot_explorer_vrom::{Vrom, VromAddr, VromError};
 use std::ops::Range;
-
-use oot_explorer_core::fs::{LazyFileSystem, VirtualSliceError, VromAddr};
-use oot_explorer_core::gbi::{Qu1_11, TextureDepth, TextureFormat};
-use scoped_owner::ScopedOwner;
 use thiserror::Error;
 
 use crate::rcp::TmemSource;
@@ -77,7 +75,7 @@ pub enum DecodeError {
     UnderflowedTexels { want: u32, got: u32 },
 
     #[error("inaccessible texels: {0:?}")]
-    InaccessibleTexels(VirtualSliceError),
+    InaccessibleTexels(VromError),
 
     #[error("palette was loaded via LoadBlock")]
     UnexpectedPaletteSource,
@@ -86,7 +84,7 @@ pub enum DecodeError {
     UndefinedPalette,
 
     #[error("inaccessible palette: {0:?}")]
-    InaccessiblePalette(VirtualSliceError),
+    InaccessiblePalette(VromError),
 }
 
 fn get_texture_source_and_load_information(
@@ -128,8 +126,7 @@ fn get_texture_source_and_load_information(
 }
 
 pub fn get_texel_data<'a>(
-    scope: &'a ScopedOwner,
-    fs: &mut LazyFileSystem<'a>,
+    vrom: Vrom<'a>,
     texture: &TextureDescriptor,
     src_ptr: VromAddr,
     load_len: u32,
@@ -144,8 +141,8 @@ pub fn get_texel_data<'a>(
         });
     }
 
-    let src = fs
-        .get_virtual_slice(scope, src_ptr..src_ptr + expected_len)
+    let src = vrom
+        .slice(src_ptr..src_ptr + expected_len)
         .map_err(|e| DecodeError::InaccessibleTexels(e))?;
 
     let stride_bytes = 8 * texture.render_stride;
@@ -154,8 +151,7 @@ pub fn get_texel_data<'a>(
 }
 
 pub fn get_palette_data<'a>(
-    scope: &'a ScopedOwner,
-    fs: &mut LazyFileSystem<'a>,
+    vrom: Vrom<'a>,
     texture: &TextureDescriptor,
     entry_range: Range<u32>,
 ) -> Result<&'a [u8], DecodeError> {
@@ -170,11 +166,8 @@ pub fn get_palette_data<'a>(
         &TmemSource::LoadBlock { .. } => Err(DecodeError::UnexpectedPaletteSource),
         &TmemSource::LoadTlut { ptr, count } => {
             assert!(count as u32 >= entry_range.end);
-            fs.get_virtual_slice(
-                scope,
-                (ptr + 2 * entry_range.start)..(ptr + 2 * entry_range.end),
-            )
-            .map_err(|e| DecodeError::InaccessiblePalette(e))
+            vrom.slice((ptr + 2 * entry_range.start)..(ptr + 2 * entry_range.end))
+                .map_err(|e| DecodeError::InaccessiblePalette(e))
         }
         &TmemSource::Undefined => Err(DecodeError::UndefinedPalette),
     }
@@ -183,8 +176,7 @@ pub fn get_palette_data<'a>(
 trait TexelDecoder {
     fn decode<'a>(
         &self,
-        scope: &'a ScopedOwner,
-        fs: &mut LazyFileSystem<'a>,
+        vrom: Vrom<'a>,
         texture: &TextureDescriptor,
         src: &[u8],
         dst: &mut Vec<u8>,
@@ -204,8 +196,7 @@ struct Ci4TexelDecoder<P: PaletteDecoder>(P);
 impl<P: PaletteDecoder> TexelDecoder for Ci4TexelDecoder<P> {
     fn decode<'a>(
         &self,
-        scope: &'a ScopedOwner,
-        fs: &mut LazyFileSystem<'a>,
+        vrom: Vrom<'a>,
         texture: &TextureDescriptor,
         src: &[u8],
         dst: &mut Vec<u8>,
@@ -213,7 +204,7 @@ impl<P: PaletteDecoder> TexelDecoder for Ci4TexelDecoder<P> {
         load_dxt: Qu1_11,
     ) -> Result<(), DecodeError> {
         let palette_base = 16 * texture.render_palette as u32;
-        let palette = get_palette_data(scope, fs, texture, palette_base..palette_base + 16)?;
+        let palette = get_palette_data(vrom, texture, palette_base..palette_base + 16)?;
         for y in 0..texture.render_height {
             for x in (0..texture.render_width).step_by(2) {
                 let index_offset = word_swap(stride_bytes * y + x / 2, load_dxt, y);
@@ -245,8 +236,7 @@ struct Ia4TexelDecoder;
 impl TexelDecoder for Ia4TexelDecoder {
     fn decode<'a>(
         &self,
-        _scope: &'a ScopedOwner,
-        _fs: &mut LazyFileSystem<'a>,
+        _vrom: Vrom<'a>,
         texture: &TextureDescriptor,
         src: &[u8],
         dst: &mut Vec<u8>,
@@ -279,8 +269,7 @@ struct I4TexelDecoder;
 impl TexelDecoder for I4TexelDecoder {
     fn decode<'a>(
         &self,
-        _scope: &'a ScopedOwner,
-        _fs: &mut LazyFileSystem<'a>,
+        _vrom: Vrom<'a>,
         texture: &TextureDescriptor,
         src: &[u8],
         dst: &mut Vec<u8>,
@@ -310,15 +299,14 @@ struct Ci8TexelDecoder<P: PaletteDecoder>(P);
 impl<P: PaletteDecoder> TexelDecoder for Ci8TexelDecoder<P> {
     fn decode<'a>(
         &self,
-        scope: &'a ScopedOwner,
-        fs: &mut LazyFileSystem<'a>,
+        vrom: Vrom<'a>,
         texture: &TextureDescriptor,
         src: &[u8],
         dst: &mut Vec<u8>,
         stride_bytes: usize,
         load_dxt: Qu1_11,
     ) -> Result<(), DecodeError> {
-        let palette = get_palette_data(scope, fs, texture, 0..256)?;
+        let palette = get_palette_data(vrom, texture, 0..256)?;
         for y in 0..texture.render_height {
             for x in 0..texture.render_width {
                 let index_offset = word_swap(stride_bytes * y + x, load_dxt, y);
@@ -343,8 +331,7 @@ struct Ia8TexelDecoder;
 impl TexelDecoder for Ia8TexelDecoder {
     fn decode<'a>(
         &self,
-        _scope: &'a ScopedOwner,
-        _fs: &mut LazyFileSystem<'a>,
+        _vrom: Vrom<'a>,
         texture: &TextureDescriptor,
         src: &[u8],
         dst: &mut Vec<u8>,
@@ -374,8 +361,7 @@ struct I8TexelDecoder;
 impl TexelDecoder for I8TexelDecoder {
     fn decode<'a>(
         &self,
-        _scope: &'a ScopedOwner,
-        _fs: &mut LazyFileSystem<'a>,
+        _vrom: Vrom<'a>,
         texture: &TextureDescriptor,
         src: &[u8],
         dst: &mut Vec<u8>,
@@ -406,8 +392,7 @@ struct Rgba16TexelDecoder;
 impl TexelDecoder for Rgba16TexelDecoder {
     fn decode<'a>(
         &self,
-        _scope: &'a ScopedOwner,
-        _fs: &mut LazyFileSystem<'a>,
+        _vrom: Vrom<'a>,
         texture: &TextureDescriptor,
         src: &[u8],
         dst: &mut Vec<u8>,
@@ -436,8 +421,7 @@ struct Ia16TexelDecoder;
 impl TexelDecoder for Ia16TexelDecoder {
     fn decode<'a>(
         &self,
-        _scope: &'a ScopedOwner,
-        _fs: &mut LazyFileSystem<'a>,
+        _vrom: Vrom<'a>,
         texture: &TextureDescriptor,
         src: &[u8],
         dst: &mut Vec<u8>,
@@ -457,8 +441,7 @@ impl TexelDecoder for Ia16TexelDecoder {
 }
 
 pub fn decode<'a>(
-    scope: &'a ScopedOwner,
-    fs: &mut LazyFileSystem<'a>,
+    vrom: Vrom<'a>,
     texture: &TextureDescriptor,
 ) -> Result<DecodedTexture, DecodeError> {
     let (src_ptr, src_format, src_depth, load_dxt, load_format, load_depth, load_len) =
@@ -479,7 +462,7 @@ pub fn decode<'a>(
     let i4: &dyn TexelDecoder = &I4TexelDecoder;
     let i8: &dyn TexelDecoder = &I8TexelDecoder;
 
-    let (src, stride_bytes) = get_texel_data(scope, fs, texture, src_ptr, load_len)?;
+    let (src, stride_bytes) = get_texel_data(vrom, texture, src_ptr, load_len)?;
     let mut dst = Vec::with_capacity(4 * texture.render_width * texture.render_height);
 
     (match (
@@ -501,7 +484,7 @@ pub fn decode<'a>(
             panic!("unimplemented format: {:?}", x);
         }
     })
-    .decode(scope, fs, texture, src, &mut dst, stride_bytes, load_dxt)?;
+    .decode(vrom, texture, src, &mut dst, stride_bytes, load_dxt)?;
 
     Ok(DecodedTexture {
         width: texture.render_width,

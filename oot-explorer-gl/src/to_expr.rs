@@ -1,6 +1,6 @@
 use num_traits::{One, Zero};
-use oot_explorer_core::gbi::{AlphaCombine, AlphaInput, ColorCombine, ColorInput};
 use oot_explorer_expr as expr;
+use oot_explorer_game_data::gbi::{AlphaCombine, AlphaInput, ColorCombine, ColorInput};
 
 use crate::glsl_float_constant::GlslFloatConstant;
 use crate::glsl_vec3_constant::GlslVec3Constant;

@@ -1,17 +1,16 @@
-use oot_explorer_core::fs::LazyFileSystem;
-use oot_explorer_core::gbi::DisplayList;
-use oot_explorer_core::header::room::{MeshHeader, RoomHeaderVariant};
-use oot_explorer_core::header::scene::SceneHeaderVariant;
-use oot_explorer_core::mesh::{Background, JfifMeshVariant, MeshVariant, SimpleMeshEntry};
-use oot_explorer_core::reflect::sourced::RangeSourced;
-use oot_explorer_core::rom::Rom;
-use oot_explorer_core::room::Room;
-use oot_explorer_core::scene::Scene;
-use oot_explorer_core::segment::{Segment, SegmentCtx, SegmentResolveError};
-use oot_explorer_core::versions;
-use oot_explorer_gl::display_list_interpreter::DisplayListInterpreter;
+use oot_explorer_game_data::gbi::DisplayList;
+use oot_explorer_game_data::header_room::{MeshHeader, RoomHeaderVariant};
+use oot_explorer_game_data::header_scene::SceneHeaderVariant;
+use oot_explorer_game_data::mesh::{Background, JfifMeshVariant, MeshEntry, MeshVariant};
+use oot_explorer_game_data::room::{Room, ROOM_DESC};
+use oot_explorer_game_data::scene::{Scene, SCENE_DESC};
+use oot_explorer_game_data::versions::oot_ntsc_10;
+use oot_explorer_gl::display_list_interpreter::{DisplayListInterpreter, DisplayListOpacity};
 use oot_explorer_gl::shader_state::TextureDescriptor;
-use scoped_owner::ScopedOwner;
+use oot_explorer_read::VromProxy;
+use oot_explorer_rom::Rom;
+use oot_explorer_segment::{Segment, SegmentTable};
+use oot_explorer_vrom::{decompress, FileTable, OwnedVrom, Vrom};
 use std::collections::hash_map::DefaultHasher;
 use std::convert::TryInto;
 use std::fs::File;
@@ -20,58 +19,68 @@ use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-fn main() {
-    let rom_data = Arc::new(
-        std::fs::read("Legend of Zelda, The - Ocarina of Time (U) (V1.0) [!].z64").unwrap(),
-    );
+mod reflect_text;
 
+struct Context {
+    file_table: FileTable,
+    vrom: OwnedVrom,
+}
+
+fn main() {
+    // Load and decompress the game data. Put the results in an Arc to share with worker threads.
+    let (file_table, vrom) = decompress(
+        Rom(&std::fs::read("Legend of Zelda, The - Ocarina of Time (U) (V1.0) [!].z64").unwrap()),
+        oot_ntsc_10::FILE_TABLE_ROM_ADDR,
+    )
+    .unwrap();
+    let ctx = Arc::new(Context { file_table, vrom });
+
+    // A channel for the main thread to send work to the worker threads.
     let (sender, receiver) = crossbeam::channel::bounded(0);
+
+    // Spawn worker threads to dump textures.
     let mut join_handles = vec![];
     for _ in 0..8 {
-        let rom_data = Arc::clone(&rom_data);
+        let ctx = Arc::clone(&ctx);
         let receiver = receiver.clone();
         join_handles.push(std::thread::spawn(move || {
-            ScopedOwner::with_scope(|scope| {
-                let rom = Rom::new(&rom_data);
-                let mut fs = LazyFileSystem::new(
-                    rom,
-                    oot_explorer_core::versions::oot_ntsc_10::FILE_TABLE_ROM_ADDR,
-                );
-                while let Ok(texture) = receiver.recv() {
-                    dump_texture(scope, &mut fs, &texture);
-                }
-            });
+            while let Ok(texture) = receiver.recv() {
+                dump_texture(ctx.vrom.borrow(), &texture);
+            }
         }));
     }
 
-    ScopedOwner::with_scope(|scope| {
-        let rom = Rom::new(&rom_data);
-        let mut fs = LazyFileSystem::new(rom, versions::oot_ntsc_10::FILE_TABLE_ROM_ADDR);
-        let mut dlist_interp = DisplayListInterpreter::new();
+    // Scan the game data on the main thread.
+    let vrom = ctx.vrom.borrow();
+    let mut dlist_interp = DisplayListInterpreter::new();
+    for (scene_index, entry) in oot_ntsc_10::get_scene_table(&ctx.file_table)
+        .unwrap()
+        .iter(vrom)
+        .enumerate()
+    {
+        let scene = entry.unwrap().scene(vrom).unwrap().into_inner();
+        examine_scene(
+            vrom,
+            &SegmentTable::default(),
+            &mut dlist_interp,
+            scene_index,
+            scene,
+        );
+        dlist_interp.clear_batches();
+    }
+    println!("total_dlists: {}", dlist_interp.total_dlists());
+    println!("total_instructions: {}", dlist_interp.total_instructions());
+    println!("unmapped_calls: {:?}", dlist_interp.unmapped_calls());
+    println!("unmapped_matrices: {:?}", dlist_interp.unmapped_matrices());
+    println!("unmapped_textures: {:?}", dlist_interp.unmapped_textures());
+    println!("max_depth: {}", dlist_interp.max_depth());
+    println!("total_lit_verts: {}", dlist_interp.total_lit_verts());
+    println!("total_unlit_verts: {}", dlist_interp.total_unlit_verts());
+    println!("unique_textures: {:#?}", dlist_interp.unique_textures());
 
-        let ctx = SegmentCtx::new();
-        for (scene_index, entry) in versions::oot_ntsc_10::get_scene_table(scope, &mut fs)
-            .iter()
-            .enumerate()
-        {
-            let scene = entry.scene(scope, &mut fs);
-            examine_scene(scope, &mut fs, &ctx, &mut dlist_interp, scene_index, scene);
-            dlist_interp.clear_batches();
-        }
-        println!("total_dlists: {}", dlist_interp.total_dlists());
-        println!("total_instructions: {}", dlist_interp.total_instructions());
-        println!("unmapped_calls: {:?}", dlist_interp.unmapped_calls());
-        println!("unmapped_matrices: {:?}", dlist_interp.unmapped_matrices());
-        println!("unmapped_textures: {:?}", dlist_interp.unmapped_textures());
-        println!("max_depth: {}", dlist_interp.max_depth());
-        println!("total_lit_verts: {}", dlist_interp.total_lit_verts());
-        println!("total_unlit_verts: {}", dlist_interp.total_unlit_verts());
-        println!("unique_textures: {:#?}", dlist_interp.unique_textures());
-
-        for texture in dlist_interp.iter_textures() {
-            sender.send(texture.clone()).unwrap();
-        }
-    });
+    for texture in dlist_interp.iter_textures() {
+        sender.send(texture.clone()).unwrap();
+    }
     drop(sender);
 
     for join_handle in join_handles {
@@ -79,36 +88,37 @@ fn main() {
     }
 }
 
-fn examine_scene<'a>(
-    scope: &'a ScopedOwner,
-    fs: &mut LazyFileSystem<'a>,
-    ctx: &SegmentCtx<'a>,
+fn examine_scene(
+    vrom: Vrom<'_>,
+    segment_table: &SegmentTable,
     dlist_interp: &mut DisplayListInterpreter,
     scene_index: usize,
-    scene: RangeSourced<Scene<'a>>,
+    scene: Scene,
 ) {
-    let ctx = {
-        let mut ctx = ctx.clone();
-        ctx.set(Segment::SCENE, scene.data(), scene.vrom_range());
-        ctx
-    };
+    let segment_table = segment_table.with(Segment::SCENE, scene.addr()).unwrap();
 
-    oot_explorer_core::reflect::dump(
-        scope,
-        fs,
-        &ctx,
-        0,
-        oot_explorer_core::scene::SCENE_DESC,
-        scene.addr(),
-    );
+    reflect_text::dump(vrom, &segment_table, SCENE_DESC, scene.addr(), 0);
     println!();
 
-    for header in scene.headers() {
-        match header.variant() {
+    for result in scene.headers(vrom) {
+        let header = result.unwrap();
+        match header.variant(vrom) {
             SceneHeaderVariant::RoomList(header) => {
-                for (room_index, room_list_entry) in header.room_list(&ctx).iter().enumerate() {
-                    let room = room_list_entry.room(scope, fs);
-                    examine_room(scope, fs, &ctx, dlist_interp, scene_index, room_index, room);
+                for (room_index, room_list_entry) in header
+                    .room_list(vrom, &segment_table)
+                    .unwrap()
+                    .iter(vrom)
+                    .enumerate()
+                {
+                    let room = room_list_entry.unwrap().room(vrom).unwrap().into_inner();
+                    examine_room(
+                        vrom,
+                        &segment_table,
+                        dlist_interp,
+                        scene_index,
+                        room_index,
+                        room,
+                    );
                 }
             }
             _ => (),
@@ -116,45 +126,37 @@ fn examine_scene<'a>(
     }
 }
 
-fn examine_room<'a>(
-    scope: &'a ScopedOwner,
-    fs: &mut LazyFileSystem<'a>,
-    ctx: &SegmentCtx<'a>,
+fn examine_room(
+    vrom: Vrom<'_>,
+    segment_table: &SegmentTable,
     dlist_interp: &mut DisplayListInterpreter,
     scene_index: usize,
     room_index: usize,
-    room: RangeSourced<Room<'a>>,
+    room: Room,
 ) {
-    let ctx = {
-        let mut ctx = ctx.clone();
-        ctx.set(Segment::ROOM, room.data(), room.vrom_range());
-        ctx
-    };
+    let segment_table = segment_table.with(Segment::ROOM, room.addr()).unwrap();
 
-    oot_explorer_core::reflect::dump(
-        scope,
-        fs,
-        &ctx,
-        0,
-        oot_explorer_core::room::ROOM_DESC,
-        room.addr(),
-    );
+    reflect_text::dump(vrom, &segment_table, ROOM_DESC, room.addr(), 0);
     println!();
 
-    for header in room.headers() {
-        match header.variant() {
+    for result in room.headers(vrom) {
+        let header = result.unwrap();
+        match header.variant(vrom) {
             RoomHeaderVariant::Mesh(header) => {
                 enumerate_meshes(
-                    &ctx,
+                    vrom,
+                    &segment_table,
                     scene_index,
                     room_index,
                     header,
                     |translucent, dlist| {
-                        dlist_interp.interpret(&ctx, translucent, dlist);
+                        dlist_interp
+                            .interpret(vrom, &segment_table, translucent, dlist)
+                            .unwrap();
                     },
                     |background| {
-                        let segment_ptr = background.ptr();
-                        let vrom_addr = ctx.resolve_vrom(segment_ptr).unwrap().start;
+                        let segment_addr = background.ptr(vrom);
+                        let vrom_addr = segment_table.resolve(segment_addr).unwrap();
 
                         std::fs::write(
                             {
@@ -162,11 +164,11 @@ fn examine_room<'a>(
                                 path.push(&format!("0x{:08x}.jpg", vrom_addr.0));
                                 path
                             },
-                            // TODO: Limit this to the JFIF data. As written, all data in the
-                            // containing file after the JFIF data also gets appended to the
-                            // exported file. This should be harmless, but wastes space and is
-                            // sloppy.
-                            ctx.resolve(segment_ptr).unwrap(),
+                            // TODO: Limit this to the JFIF data. As written, all decompressed game
+                            // data after the JFIF data also gets appended to the exported file.
+                            // This should be harmless, but is extremely silly.
+                            vrom.slice_from(segment_table.resolve(segment_addr).unwrap())
+                                .unwrap(),
                         )
                         .unwrap();
                     },
@@ -177,99 +179,114 @@ fn examine_room<'a>(
     }
 }
 
-fn enumerate_meshes<'a, F, G>(
-    ctx: &SegmentCtx<'a>,
+fn enumerate_meshes<F, G>(
+    vrom: Vrom<'_>,
+    segment_table: &SegmentTable,
     scene_index: usize,
     room_index: usize,
-    header: MeshHeader<'a>,
+    header: MeshHeader,
     mut f: F,
     mut g: G,
 ) where
-    F: FnMut(bool, DisplayList),
-    G: FnMut(Background<'a>),
+    F: FnMut(DisplayListOpacity, DisplayList),
+    G: FnMut(Background),
 {
-    let mut handle_simple_mesh_entry = |entry: SimpleMeshEntry<'a>| {
-        match entry.opaque_display_list(ctx) {
-            Ok(Some(dlist)) => f(false, dlist),
-            Ok(None) => (),
-            Err(SegmentResolveError::Unmapped { .. }) => {
-                eprintln!(
-                    "scene {}, room {}: unmapped segment for display list at {:?}",
-                    scene_index,
-                    room_index,
-                    entry.opaque_display_list_ptr().non_null().unwrap(),
-                )
-            }
-        }
-        match entry.translucent_display_list(ctx) {
-            Ok(Some(dlist)) => f(true, dlist),
-            Ok(None) => (),
-            Err(SegmentResolveError::Unmapped { .. }) => {
-                eprintln!(
-                    "scene {}, room {}: unmapped segment for display list at {:?}",
-                    scene_index,
-                    room_index,
-                    entry.translucent_display_list_ptr().non_null().unwrap(),
-                )
-            }
-        }
-    };
-
-    match header.mesh(&ctx).variant() {
+    match header.mesh(vrom, segment_table).unwrap().variant(vrom) {
         MeshVariant::Simple(mesh) => {
-            mesh.entries(&ctx).iter().for_each(handle_simple_mesh_entry);
+            for result in mesh.entries(vrom, segment_table).unwrap().iter(vrom) {
+                enumerate_mesh_entry(
+                    vrom,
+                    segment_table,
+                    scene_index,
+                    room_index,
+                    result.unwrap(),
+                    &mut f,
+                );
+            }
         }
-        MeshVariant::Jfif(jfif) => match jfif.variant() {
+
+        MeshVariant::Jfif(jfif) => match jfif.variant(vrom) {
             JfifMeshVariant::Single(single) => {
-                handle_simple_mesh_entry(single.mesh_entry(ctx));
-                g(single.background());
+                enumerate_mesh_entry(
+                    vrom,
+                    segment_table,
+                    scene_index,
+                    room_index,
+                    single.mesh_entry(vrom, segment_table).unwrap(),
+                    &mut f,
+                );
+                g(single.background(vrom));
             }
             JfifMeshVariant::Multiple(multiple) => {
-                handle_simple_mesh_entry(multiple.mesh_entry(ctx));
-                for entry in multiple.background_entries(ctx) {
-                    g(entry.background());
+                enumerate_mesh_entry(
+                    vrom,
+                    segment_table,
+                    scene_index,
+                    room_index,
+                    multiple.mesh_entry(vrom, segment_table).unwrap(),
+                    &mut f,
+                );
+                for result in multiple
+                    .background_entries(vrom, segment_table)
+                    .unwrap()
+                    .iter(vrom)
+                {
+                    g(result.unwrap().background(vrom));
                 }
             }
         },
+
         MeshVariant::Clipped(mesh) => {
-            for entry in mesh.entries(ctx) {
-                match entry.opaque_display_list(ctx) {
-                    Ok(Some(dlist)) => f(false, dlist),
-                    Ok(None) => (),
-                    Err(SegmentResolveError::Unmapped { .. }) => {
-                        eprintln!(
-                            "scene {}, room {}: unmapped segment for display list at {:?}",
-                            scene_index,
-                            room_index,
-                            entry.opaque_display_list_ptr().non_null().unwrap(),
-                        )
-                    }
-                }
-                match entry.translucent_display_list(ctx) {
-                    Ok(Some(dlist)) => f(true, dlist),
-                    Ok(None) => (),
-                    Err(SegmentResolveError::Unmapped { .. }) => {
-                        eprintln!(
-                            "scene {}, room {}: unmapped segment for display list at {:?}",
-                            scene_index,
-                            room_index,
-                            entry.translucent_display_list_ptr().non_null().unwrap(),
-                        )
-                    }
-                }
+            for result in mesh.entries(vrom, segment_table).unwrap().iter(vrom) {
+                enumerate_mesh_entry(
+                    vrom,
+                    segment_table,
+                    scene_index,
+                    room_index,
+                    result.unwrap(),
+                    &mut f,
+                );
             }
         }
     }
 }
 
-fn dump_texture<'a>(
-    scope: &'a ScopedOwner,
-    fs: &mut LazyFileSystem<'a>,
-    texture: &TextureDescriptor,
-) {
+fn enumerate_mesh_entry<F>(
+    vrom: Vrom<'_>,
+    segment_table: &SegmentTable,
+    scene_index: usize,
+    room_index: usize,
+    entry: impl MeshEntry + Copy,
+    mut f: F,
+) where
+    F: FnMut(DisplayListOpacity, DisplayList),
+{
+    match entry.opaque_display_list(vrom, segment_table) {
+        Ok(Some(dlist)) => f(DisplayListOpacity::Opaque, dlist),
+        Ok(None) => (),
+        Err(e) => {
+            eprintln!(
+                "scene {}, room {}: while resolving display list: {}",
+                scene_index, room_index, e,
+            )
+        }
+    }
+    match entry.translucent_display_list(vrom, segment_table) {
+        Ok(Some(dlist)) => f(DisplayListOpacity::Translucent, dlist),
+        Ok(None) => (),
+        Err(e) => {
+            eprintln!(
+                "scene {}, room {}: while resolving display list: {}",
+                scene_index, room_index, e,
+            )
+        }
+    }
+}
+
+fn dump_texture(vrom: Vrom<'_>, texture: &TextureDescriptor) {
     let src = texture.source.src().unwrap();
 
-    let decoded_texture = match oot_explorer_gl::texture::decode(scope, fs, texture) {
+    let decoded_texture = match oot_explorer_gl::texture::decode(vrom, texture) {
         Ok(decoded_texture) => decoded_texture,
         Err(e) => {
             eprintln!("WARNING: failed to decode texture {:?}: {}", src, e);

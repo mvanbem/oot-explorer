@@ -1,10 +1,14 @@
 [workspace]
 members = [
     "deref-map",
-    "oot-explorer-core",
     "oot-explorer-demo",
     "oot-explorer-expr",
+    "oot-explorer-game-data",
     "oot-explorer-gl",
-    "oot-explorer-web",
-    "scoped-owner",
+    "oot-explorer-read",
+    "oot-explorer-reflect",
+    "oot-explorer-rom",
+    "oot-explorer-segment",
+    "oot-explorer-vrom",
+    # "oot-explorer-web",
 ]

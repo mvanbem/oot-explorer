@@ -1,9 +1,9 @@
 use byteorder::{BigEndian, ReadBytesExt};
-use oot_explorer_core::fs::VromAddr;
-use oot_explorer_core::gbi::{
+use oot_explorer_game_data::gbi::{
     AlphaCombine, ColorCombine, CombinerReference, GeometryMode, OtherModeH, OtherModeHMask,
     OtherModeL, OtherModeLMask, Qu0_16, Qu10_2, Qu1_11, TextureDepth, TextureFormat,
 };
+use oot_explorer_vrom::VromAddr;
 use std::io::{self, Read};
 use std::ops::{Mul, Range};
 use thiserror::Error;
@@ -193,6 +193,8 @@ impl From<[i16; 3]> for Point {
 pub struct Matrix([[i32; 4]; 4]);
 
 impl Matrix {
+    pub const SIZE: u32 = 128;
+
     pub fn identity() -> Matrix {
         Matrix([
             [0x0001_0000, 0, 0, 0],

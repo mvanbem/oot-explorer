@@ -3,7 +3,7 @@
 #[cfg(feature = "trace_macros")]
 trace_macros!(true);
 
-use oot_explorer_core::fs::LazyFileSystem;
+use oot_explorer_core::fs::{fully_decompress, FileTable, LazyFileSystem, OwnedVrom, Vrom};
 use oot_explorer_core::header::room::RoomHeaderVariant;
 use oot_explorer_core::header::scene::SceneHeaderVariant;
 use oot_explorer_core::mesh::{
@@ -13,7 +13,7 @@ use oot_explorer_core::reflect::sourced::RangeSourced;
 use oot_explorer_core::rom::Rom;
 use oot_explorer_core::room::Room;
 use oot_explorer_core::scene::Scene;
-use oot_explorer_core::segment::{Segment, SegmentCtx};
+use oot_explorer_core::segment::{Segment, SegmentTable};
 use oot_explorer_core::versions;
 use oot_explorer_gl::display_list_interpreter::DisplayListInterpreter;
 use scoped_owner::ScopedOwner;
@@ -43,7 +43,9 @@ pub struct Context {
 }
 pub struct InnerContext {
     gl: WebGl2RenderingContext,
-    rom_data: Arc<[u8]>,
+    rom_data: Box<[u8]>,
+    file_table: Option<FileTable>,
+    vrom: Option<OwnedVrom>,
     texture_cache: TextureCache,
     sampler_cache: SamplerCache,
 }
@@ -84,11 +86,44 @@ impl Context {
         Context {
             inner: Arc::new(Mutex::new(InnerContext {
                 gl,
-                rom_data: rom_data.into(),
+                rom_data,
+                file_table: None,
+                vrom: None,
                 texture_cache: TextureCache::new(),
                 sampler_cache: SamplerCache::new(),
             })),
         }
+    }
+
+    #[wasm_bindgen(js_name = decompress)]
+    pub fn decompress(&self) {
+        let mut inner_mut = self.inner.lock().unwrap_throw();
+        if inner_mut.file_table.is_none() || inner_mut.vrom.is_none() {
+            let (vrom, file_table) = fully_decompress(
+                Rom::new(&inner_mut.rom_data),
+                versions::oot_ntsc_10::FILE_TABLE_ROM_ADDR,
+            );
+            inner_mut.vrom = Some(vrom);
+            inner_mut.file_table = Some(file_table);
+        }
+        let mut vrom_data = vec![];
+        ScopedOwner::with_scope(|scope| {
+            let mut fs = LazyFileSystem::new(
+                Rom::new(&inner_mut.rom_data),
+                versions::oot_ntsc_10::FILE_TABLE_ROM_ADDR,
+            );
+            for file_index in 0..fs.len() {
+                let (start, end) = {
+                    let range = fs.metadata(file_index).virtual_range();
+                    (range.start.0 as usize, range.end.0 as usize)
+                };
+                if vrom_data.len() < end {
+                    vrom_data.resize(end, 0x00);
+                }
+                (&mut vrom_data[start..end]).copy_from_slice(fs.get_file(scope, file_index));
+            }
+        });
+        inner_mut.vrom = Some(vrom_data.into_boxed_slice());
     }
 
     #[wasm_bindgen(js_name = processScene)]
@@ -97,20 +132,22 @@ impl Context {
         let InnerContext {
             ref gl,
             ref rom_data,
+            ref file_table,
+            ref vrom,
             ref mut texture_cache,
             ref mut sampler_cache,
         } = *inner_mut;
-
         let rom = Rom::new(rom_data);
+        let file_table = file_table.as_ref().unwrap_throw();
+        let vrom = vrom.as_ref().unwrap_throw().borrow();
+
         ScopedOwner::with_scope(|scope| {
-            let mut fs = LazyFileSystem::new(rom, versions::oot_ntsc_10::FILE_TABLE_ROM_ADDR);
-            let scene = versions::oot_ntsc_10::get_scene_table(scope, &mut fs)
+            let scene = versions::oot_ntsc_10::get_scene_table(file_table, vrom)
                 .get(scene_index)
-                .scene(scope, &mut fs);
+                .scene(vrom);
             let mut dlist_interp = DisplayListInterpreter::new();
             let mut backgrounds = vec![];
-            let start_pos =
-                examine_scene(scope, &mut fs, scene, &mut dlist_interp, &mut backgrounds);
+            let start_pos = examine_scene(vrom, scene, &mut dlist_interp, &mut backgrounds);
 
             // TODO: Set up a web-friendly logger of some kind.
             println!("total_dlists: {}", dlist_interp.total_dlists());
@@ -181,15 +218,14 @@ impl Context {
     }
 }
 
-fn examine_scene<'a>(
-    scope: &'a ScopedOwner,
-    fs: &mut LazyFileSystem<'a>,
-    scene: RangeSourced<Scene<'a>>,
+fn examine_scene(
+    vrom: Vrom<'_>,
+    scene: RangeSourced<Scene<'_>>,
     dlist_interp: &mut DisplayListInterpreter,
     backgrounds: &mut Vec<String>,
 ) -> Option<[f64; 5]> {
     let ctx = {
-        let mut ctx = SegmentCtx::new();
+        let mut ctx = SegmentTable::new();
         ctx.set(Segment::SCENE, scene.data(), scene.vrom_range());
         ctx
     };
@@ -210,7 +246,7 @@ fn examine_scene<'a>(
             SceneHeaderVariant::RoomList(header) => {
                 for room_list_entry in header.room_list(&ctx) {
                     let room = room_list_entry.room(scope, fs);
-                    examine_room(scope, fs, scene.clone(), room, dlist_interp, backgrounds);
+                    examine_room(scene, room, dlist_interp, backgrounds);
                 }
             }
             _ => (),
@@ -219,16 +255,15 @@ fn examine_scene<'a>(
     start_pos
 }
 
-fn examine_room<'a>(
-    _scope: &'a ScopedOwner,
-    _fs: &mut LazyFileSystem<'a>,
-    scene: RangeSourced<Scene<'a>>,
-    room: RangeSourced<Room<'a>>,
+fn examine_room(
+    vrom: Vrom<'_>,
+    scene: RangeSourced<Scene<'_>>,
+    room: RangeSourced<Room<'_>>,
     dlist_interp: &mut DisplayListInterpreter,
     backgrounds: &mut Vec<String>,
 ) {
     let cpu_ctx = {
-        let mut ctx = SegmentCtx::new();
+        let mut ctx = SegmentTable::new();
         ctx.set(Segment::SCENE, scene.data(), scene.vrom_range());
         ctx.set(Segment::ROOM, room.data(), room.vrom_range());
         ctx

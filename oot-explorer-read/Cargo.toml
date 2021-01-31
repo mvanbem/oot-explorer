@@ -1,5 +1,5 @@
 [package]
-name = "oot-explorer-gl"
+name = "oot-explorer-read"
 version = "0.1.0"
 authors = ["Michael VanBemmel <michael.vanbemmel@gmail.com>"]
 edition = "2018"
@@ -9,10 +9,7 @@ license = "MIT"
 
 [dependencies]
 byteorder = "1"
-num-traits = "0.2"
-oot-explorer-expr = { path = "../oot-explorer-expr" }
-oot-explorer-game-data = { path = "../oot-explorer-game-data" }
-oot-explorer-read = { path = "../oot-explorer-read" }
+oot-explorer-rom = { path = "../oot-explorer-rom" }
 oot-explorer-segment = { path = "../oot-explorer-segment" }
 oot-explorer-vrom = { path = "../oot-explorer-vrom" }
 thiserror = "1"

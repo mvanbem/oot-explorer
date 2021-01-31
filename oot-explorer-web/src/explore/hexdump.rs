@@ -1,7 +1,6 @@
-use oot_explorer_core::fs::{LazyFileSystem, VromAddr};
-use oot_explorer_core::rom::Rom;
-use oot_explorer_core::versions::oot_ntsc_10;
-use scoped_owner::ScopedOwner;
+use oot_explorer_game_data::versions::oot_ntsc_10;
+use oot_explorer_read::VromProxy;
+use oot_explorer_vrom::VromAddr;
 use std::fmt::Write;
 use std::ops::Range;
 use std::sync::{Arc, Mutex};
@@ -62,22 +61,28 @@ impl HexDumpView {
             .unwrap_throw();
 
         // TODO: Remove this arbitrary choice. Make the caller provide data and a base address.
-        let (base_addr, data) = ScopedOwner::with_scope(|scope| {
-            let ref_ctx = ctx.inner.lock().unwrap_throw();
-            let mut fs = LazyFileSystem::new(
-                Rom::new(&ref_ctx.rom_data),
-                oot_ntsc_10::FILE_TABLE_ROM_ADDR,
-            );
-            let scene_table = oot_ntsc_10::get_scene_table(scope, &mut fs);
+        let ref_ctx = ctx.inner.lock().unwrap_throw();
+        let vrom = ref_ctx.vrom.as_ref().unwrap_throw().borrow();
+        let (base_addr, data) = {
+            let scene_table =
+                oot_ntsc_10::get_scene_table(ref_ctx.file_table.as_ref().unwrap_throw())
+                    .unwrap_throw();
             let scene = scene_table
-                .iter()
+                .iter(vrom)
                 .next()
                 .unwrap_throw()
-                .scene(scope, &mut fs);
+                .unwrap_throw()
+                .scene(vrom)
+                .unwrap_throw();
             let base_addr = scene.addr();
-            let data = scene.data().to_owned().into_boxed_slice();
+            // TODO: Don't save the data, just use the address to index into the context's VROM!
+            let data = vrom
+                .slice(scene.vrom_range())
+                .unwrap_throw()
+                .to_owned()
+                .into_boxed_slice();
             (base_addr, data)
-        });
+        };
 
         // for offset in (0..0x0000da10).step_by(0x10) {
         //     let row = make_row(document, &data[offset as usize..], base_addr + offset, None);

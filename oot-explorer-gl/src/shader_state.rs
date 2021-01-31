@@ -1,5 +1,5 @@
-use oot_explorer_core::gbi::{CombinerReference, Qu10_2, TextureDepth, TextureFormat};
 use oot_explorer_expr as expr;
+use oot_explorer_game_data::gbi::{CombinerReference, Qu10_2, TextureDepth, TextureFormat};
 use std::fmt::Write;
 use std::ops::Range;
 

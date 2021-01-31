@@ -1,7 +1,6 @@
-use oot_explorer_core::fs::LazyFileSystem;
 use oot_explorer_gl::shader_state::TextureDescriptor;
 use oot_explorer_gl::texture::{self, DecodedTexture};
-use scoped_owner::ScopedOwner;
+use oot_explorer_vrom::Vrom;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -54,16 +53,15 @@ impl TextureCache {
 
     /// This method returns `Option` because some textures cannot be loaded. Failed load attempts
     /// will be cached.
-    pub fn get_or_decode<'a>(
+    pub fn get_or_decode(
         &mut self,
         gl: &WebGl2RenderingContext,
-        scope: &'a ScopedOwner,
-        fs: &mut LazyFileSystem<'a>,
+        vrom: Vrom<'_>,
         descriptor: &TextureDescriptor,
     ) -> Option<&WebGlTexture> {
         self.map
             .entry(opaque_key(descriptor))
-            .or_insert_with(|| match texture::decode(scope, fs, descriptor) {
+            .or_insert_with(|| match texture::decode(vrom, descriptor) {
                 Ok(decoded) => Some(create_gl_texture(gl, decoded)),
                 Err(e) => {
                     eprintln!(

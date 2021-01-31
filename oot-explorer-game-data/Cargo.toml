@@ -1,0 +1,23 @@
+[package]
+name = "oot-explorer-game-data"
+version = "0.1.0"
+authors = ["Michael VanBemmel <michael.vanbemmel@gmail.com>"]
+edition = "2018"
+license = "MIT"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+byteorder = "1"
+derive_more = "0.99"
+num-traits = "0.2"
+oot-explorer-read = { path = "../oot-explorer-read" }
+oot-explorer-reflect = { path = "../oot-explorer-reflect" }
+oot-explorer-rom = { path = "../oot-explorer-rom" }
+oot-explorer-segment = { path = "../oot-explorer-segment" }
+oot-explorer-vrom = { path = "../oot-explorer-vrom" }
+paste = "1"
+
+[features]
+default = []
+trace_macros = []

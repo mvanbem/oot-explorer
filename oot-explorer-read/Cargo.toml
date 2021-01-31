@@ -1,0 +1,15 @@
+[package]
+name = "oot-explorer-read"
+version = "0.1.0"
+authors = ["Michael VanBemmel <michael.vanbemmel@gmail.com>"]
+edition = "2018"
+license = "MIT"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+byteorder = "1"
+oot-explorer-rom = { path = "../oot-explorer-rom" }
+oot-explorer-segment = { path = "../oot-explorer-segment" }
+oot-explorer-vrom = { path = "../oot-explorer-vrom" }
+thiserror = "1"

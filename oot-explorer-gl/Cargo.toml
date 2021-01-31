@@ -10,7 +10,9 @@ license = "MIT"
 [dependencies]
 byteorder = "1"
 num-traits = "0.2"
-oot-explorer-core = { path = "../oot-explorer-core" }
 oot-explorer-expr = { path = "../oot-explorer-expr" }
-scoped-owner = { path = "../scoped-owner" }
+oot-explorer-game-data = { path = "../oot-explorer-game-data" }
+oot-explorer-read = { path = "../oot-explorer-read" }
+oot-explorer-segment = { path = "../oot-explorer-segment" }
+oot-explorer-vrom = { path = "../oot-explorer-vrom" }
 thiserror = "1"

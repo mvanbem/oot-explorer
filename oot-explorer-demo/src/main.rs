@@ -100,7 +100,7 @@ fn examine_scene(
     scene_index: usize,
     scene: Scene,
 ) {
-    let segment_table = segment_table.with(Segment::SCENE, scene.addr()).unwrap();
+    let segment_table = segment_table.with(Segment::SCENE, scene.addr());
 
     reflect_text::dump(vrom, &segment_table, SCENE_DESC, scene.addr(), 0);
     println!();
@@ -141,7 +141,7 @@ fn examine_room(
     room_index: usize,
     room: Room,
 ) {
-    let segment_table = segment_table.with(Segment::ROOM, room.addr()).unwrap();
+    let segment_table = segment_table.with(Segment::ROOM, room.addr());
 
     reflect_text::dump(vrom, &segment_table, ROOM_DESC, room.addr(), 0);
     println!();

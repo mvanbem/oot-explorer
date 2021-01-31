@@ -72,9 +72,7 @@ impl ReflectFieldInfo {
             .scene(vrom)
             .unwrap_throw()
             .into_inner();
-        let segment_table = SegmentTable::new()
-            .with(Segment::SCENE, scene.addr())
-            .unwrap_throw();
+        let segment_table = SegmentTable::new().with(Segment::SCENE, scene.addr());
 
         reflect_field(
             vrom,
@@ -105,9 +103,7 @@ pub fn reflect_inside_the_deku_tree_scene(ctx: &Context) -> ReflectResult {
         .scene(vrom)
         .unwrap_throw()
         .into_inner();
-    let segment_ctx = SegmentTable::new()
-        .with(Segment::SCENE, scene.addr())
-        .unwrap_throw();
+    let segment_ctx = SegmentTable::new().with(Segment::SCENE, scene.addr());
 
     reflect_field(
         vrom,

@@ -13,11 +13,15 @@ impl Segment {
     pub const OBJECT: Segment = Segment(0x06);
 
     pub fn validate(self) -> Result<Self, SegmentError> {
-        if self.0 & 0x0f == self.0 {
+        if self.0 <= 0x0f {
             Ok(self)
         } else {
             Err(SegmentError::BadSegment(self))
         }
+    }
+
+    pub fn masked(self) -> Self {
+        Self(self.0 & 0x0f)
     }
 }
 

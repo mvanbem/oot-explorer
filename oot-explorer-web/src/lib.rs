@@ -213,12 +213,10 @@ fn examine_scene(
     dlist_interp: &mut DisplayListInterpreter,
     backgrounds: &mut Vec<String>,
 ) -> Option<[f64; 5]> {
-    let segment_table = SegmentTable::new()
-        .with(Segment::SCENE, scene.addr())
-        .unwrap();
+    let segment_table = SegmentTable::new().with(Segment::SCENE, scene.addr());
     let mut start_pos = None;
     for result in scene.headers(vrom) {
-        let header = result.unwrap();
+        let header = result.unwrap_throw();
         match header.variant(vrom) {
             SceneHeaderVariant::StartPositions(header) => {
                 start_pos = header
@@ -273,9 +271,7 @@ fn examine_room(
 ) {
     let cpu_ctx = SegmentTable::new()
         .with(Segment::SCENE, scene.addr())
-        .unwrap_throw()
-        .with(Segment::ROOM, room.addr())
-        .unwrap_throw();
+        .with(Segment::ROOM, room.addr());
     let rsp_ctx = {
         let ctx = cpu_ctx.clone();
 
@@ -330,7 +326,7 @@ fn examine_room(
 
         let mut index = FileIndex(0);
         let vrom_end = loop {
-            let range = file_table.file_vrom_range(index).unwrap();
+            let range = file_table.file_vrom_range(index).unwrap_throw();
             if range.contains(&vrom_start) {
                 break range.end;
             }

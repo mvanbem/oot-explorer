@@ -3,7 +3,7 @@ use thiserror::Error;
 
 use crate::VromAddr;
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct FileIndex(pub u32);
 
 /// A processed file table for use after VROM is decompressed.

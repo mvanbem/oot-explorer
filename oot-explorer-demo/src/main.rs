@@ -10,7 +10,7 @@ use oot_explorer_gl::shader_state::TextureDescriptor;
 use oot_explorer_read::VromProxy;
 use oot_explorer_rom::Rom;
 use oot_explorer_segment::{Segment, SegmentTable};
-use oot_explorer_vrom::{decompress, FileTable, OwnedVrom, Vrom};
+use oot_explorer_vrom::{decompress, FileIndex, FileTable, OwnedVrom, Vrom};
 use std::collections::hash_map::DefaultHasher;
 use std::convert::TryInto;
 use std::fs::File;
@@ -51,16 +51,20 @@ fn main() {
     }
 
     // Scan the game data on the main thread.
-    let vrom = ctx.vrom.borrow();
     let mut dlist_interp = DisplayListInterpreter::new();
     for (scene_index, entry) in oot_ntsc_10::get_scene_table(&ctx.file_table)
         .unwrap()
-        .iter(vrom)
+        .iter(ctx.vrom.borrow())
         .enumerate()
     {
-        let scene = entry.unwrap().scene(vrom).unwrap().into_inner();
+        let scene = entry
+            .unwrap()
+            .scene(ctx.vrom.borrow())
+            .unwrap()
+            .into_inner();
         examine_scene(
-            vrom,
+            &ctx.file_table,
+            ctx.vrom.borrow(),
             &SegmentTable::default(),
             &mut dlist_interp,
             scene_index,
@@ -89,6 +93,7 @@ fn main() {
 }
 
 fn examine_scene(
+    file_table: &FileTable,
     vrom: Vrom<'_>,
     segment_table: &SegmentTable,
     dlist_interp: &mut DisplayListInterpreter,
@@ -112,6 +117,7 @@ fn examine_scene(
                 {
                     let room = room_list_entry.unwrap().room(vrom).unwrap().into_inner();
                     examine_room(
+                        file_table,
                         vrom,
                         &segment_table,
                         dlist_interp,
@@ -127,6 +133,7 @@ fn examine_scene(
 }
 
 fn examine_room(
+    file_table: &FileTable,
     vrom: Vrom<'_>,
     segment_table: &SegmentTable,
     dlist_interp: &mut DisplayListInterpreter,
@@ -158,6 +165,15 @@ fn examine_room(
                         let segment_addr = background.ptr(vrom);
                         let vrom_addr = segment_table.resolve(segment_addr).unwrap();
 
+                        let mut index = FileIndex(0);
+                        let end_addr = loop {
+                            let range = file_table.file_vrom_range(index).unwrap();
+                            if range.contains(&vrom_addr) {
+                                break range.end;
+                            }
+                            index = FileIndex(index.0 + 1);
+                        };
+
                         std::fs::write(
                             {
                                 let mut path = PathBuf::from("./backgrounds");
@@ -165,10 +181,9 @@ fn examine_room(
                                 path
                             },
                             // TODO: Limit this to the JFIF data. As written, all decompressed game
-                            // data after the JFIF data also gets appended to the exported file.
-                            // This should be harmless, but is extremely silly.
-                            vrom.slice_from(segment_table.resolve(segment_addr).unwrap())
-                                .unwrap(),
+                            // data in the same file after the JFIF data also gets appended to the
+                            // exported file. This should be harmless, but is silly.
+                            vrom.slice(vrom_addr..end_addr).unwrap(),
                         )
                         .unwrap();
                     },

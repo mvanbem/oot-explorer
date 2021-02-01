@@ -77,25 +77,39 @@ function addLineNumbers(text: string) {
     return text.split('\n').map((line, i) => (i + 1) + ' | ' + line).join('\n');
 }
 
-function parseUrlFragment() {
-    let matches = /^#scene=([0-9]+)$/.exec(window.location.hash);
+function parseUrlFragment(): UrlFragmentParams {
+    let matches = /^#scene=([0-9]+)(&room=([0-9]+))?$/.exec(window.location.hash);
     if (matches === null) {
         return {
             sceneIndex: 0,
+            roomIndex: undefined,
         };
     }
+
+    let sceneIndex = parseInt(matches[1], 10);
+    let roomIndex = matches[3] !== undefined
+        ? parseInt(matches[3], 10)
+        : undefined;
+
     return {
-        sceneIndex: parseInt(matches[1], 10),
+        sceneIndex,
+        roomIndex,
     };
 }
 
-interface UpdateUrlFragmentParams {
+interface UrlFragmentParams {
     sceneIndex: number;
+    roomIndex?: number;
 }
 
-function updateUrlFragment({ sceneIndex }: UpdateUrlFragmentParams) {
+function updateUrlFragment({ sceneIndex, roomIndex }: UrlFragmentParams) {
+    let hash = '#scene=' + sceneIndex;
+    if (roomIndex !== undefined) {
+        hash += '&room=' + roomIndex;
+    }
+
     let url = new URL(window.location.toString());
-    url.hash = '#scene=' + sceneIndex;
+    url.hash = hash;
     window.location.replace(url.toString());
 }
 
@@ -156,6 +170,7 @@ export class MainView {
         }
     };
     sceneIndex?: number;
+    roomIndex?: number;
     view: View;
     backgroundProgram: WebGLProgram;
     backgroundVertexBuffer: WebGLBuffer;
@@ -164,6 +179,11 @@ export class MainView {
     nextResolves: (() => void)[];
     backgrounds: WebGLTexture[];
     prevTimestamp?: number;
+    private readonly exploreButton: HTMLButtonElement;
+    private readonly prevSceneButton: HTMLButtonElement;
+    private readonly nextSceneButton: HTMLButtonElement;
+    private readonly prevRoomButton: HTMLButtonElement;
+    private readonly nextRoomButton: HTMLButtonElement;
 
     constructor({ wasm, rom }: MainViewCtorArgs) {
         Toolbar.show();
@@ -177,9 +197,12 @@ export class MainView {
             stencil: false,
         })!;
 
-        document.getElementById('explore')!.addEventListener('click', () => {
+        this.exploreButton = <HTMLButtonElement>document.getElementById('explore')!;
+        this.exploreButton.addEventListener('click', () => {
             if (this.sceneIndex !== undefined) {
-                let root = wasm.ReflectRoot.forScene(this.ctx, this.sceneIndex);
+                let root = this.roomIndex !== undefined
+                    ? wasm.ReflectRoot.forRoom(this.ctx, this.sceneIndex, this.roomIndex)
+                    : wasm.ReflectRoot.forScene(this.ctx, this.sceneIndex);
                 let exploreView = new ExploreView(wasm, this.ctx, root);
                 this.canvas.parentElement!.appendChild(exploreView.element);
                 WindowManager.add(exploreView);
@@ -239,21 +262,8 @@ export class MainView {
                 return;
             }
 
-            if (key === 'PageDown') {
-                if (this.sceneIndex !== undefined) {
-                    let newSceneIndex = this.sceneIndex + 1;
-                    if (newSceneIndex < this.ctx.sceneCount) {
-                        this.changeScene(newSceneIndex);
-                    }
-                }
-            } else if (key === 'PageUp') {
-                if (this.sceneIndex !== undefined) {
-                    let newSceneIndex = this.sceneIndex - 1;
-                    if (newSceneIndex >= 0) {
-                        this.changeScene(newSceneIndex);
-                    }
-                }
-            }
+            if (key === 'PageDown') { this.nextScene(); }
+            else if (key === 'PageUp') { this.prevScene(); }
         });
         window.addEventListener('keyup', e => {
             let key = e.code;
@@ -268,13 +278,32 @@ export class MainView {
             }
         });
         window.addEventListener('hashchange', e => {
-            let { sceneIndex } = parseUrlFragment();
+            let { sceneIndex, roomIndex } = parseUrlFragment();
             if (sceneIndex !== this.sceneIndex) {
-                this.changeScene(sceneIndex);
+                this.changeScene(sceneIndex, roomIndex);
+            } else if (roomIndex !== this.roomIndex) {
+                this.changeRoom(roomIndex);
             } else {
                 // Canonicalize it.
-                updateUrlFragment({ sceneIndex });
+                updateUrlFragment({ sceneIndex, roomIndex });
             }
+        });
+
+        this.prevSceneButton = <HTMLButtonElement>document.getElementById('prev-scene')!;
+        this.prevSceneButton.addEventListener('click', () => {
+            this.prevScene();
+        });
+        this.nextSceneButton = <HTMLButtonElement>document.getElementById('next-scene')!;
+        this.nextSceneButton.addEventListener('click', () => {
+            this.nextScene();
+        });
+        this.prevRoomButton = <HTMLButtonElement>document.getElementById('prev-room')!;
+        this.prevRoomButton.addEventListener('click', () => {
+            this.prevRoom();
+        });
+        this.nextRoomButton = <HTMLButtonElement>document.getElementById('next-room')!;
+        this.nextRoomButton.addEventListener('click', () => {
+            this.nextRoom();
         });
 
         this.view = {
@@ -310,7 +339,8 @@ export class MainView {
         this.nextResolves = [];
         this.backgrounds = [];
 
-        this.changeScene(parseUrlFragment().sceneIndex);
+        let { sceneIndex, roomIndex } = parseUrlFragment();
+        this.changeScene(sceneIndex, roomIndex);
 
         window.requestAnimationFrame(timestamp => this.step(timestamp));
     }
@@ -319,11 +349,33 @@ export class MainView {
         return new Promise<void>(resolve => this.nextResolves.push(resolve));
     }
 
-    async changeScene(sceneIndex: number) {
+    private prevScene() {
+        if (this.sceneIndex !== undefined) {
+            this.changeScene(this.sceneIndex - 1);
+        }
+    }
+
+    private nextScene() {
+        if (this.sceneIndex !== undefined) {
+            this.changeScene(this.sceneIndex + 1);
+        }
+    }
+
+    async changeScene(sceneIndex: number, roomIndex?: number) {
+        const sceneCount = this.ctx.sceneCount;
+        if (sceneIndex >= sceneCount) {
+            sceneIndex = sceneCount - 1;
+        }
+        if (sceneIndex === this.sceneIndex) {
+            this.changeRoom(roomIndex);
+            return;
+        }
+
+        this.sceneIndex = undefined;
         let gl = this.gl;
-        this.sceneIndex = sceneIndex;
         document.getElementById('scene')!.textContent = 'Scene ' + sceneIndex;
-        updateUrlFragment({ sceneIndex });
+        this.prevSceneButton.disabled = sceneIndex === 0;
+        this.nextSceneButton.disabled = sceneIndex === sceneCount - 1;
 
         Status.show('Processing scene...');
         await this.nextStep();
@@ -421,6 +473,7 @@ export class MainView {
         }
 
         // Publish all new data.
+        this.sceneIndex = sceneIndex;
         this.batches = (<Batch[]>[]).concat(opaqueBatches, translucentBatches);
         this.backgrounds = backgrounds;
         if (processedScene.startPos) {
@@ -434,8 +487,52 @@ export class MainView {
                 pitch: processedScene.startPos[3],
             };
         }
-
         Status.hide();
+
+        this.changeRoom(roomIndex);
+    }
+
+    private prevRoom() {
+        if (this.sceneIndex === undefined) {
+            return;
+        }
+
+        this.changeRoom(this.roomIndex !== undefined && this.roomIndex > 0
+            ? this.roomIndex - 1 : undefined);
+    }
+
+    private nextRoom() {
+        if (this.sceneIndex === undefined) {
+            return;
+        }
+
+        if (this.roomIndex === undefined) {
+            this.changeRoom(0);
+        } else {
+            let newRoomIndex = this.roomIndex + 1;
+            if (newRoomIndex < this.ctx.roomCount(this.sceneIndex)) {
+                this.changeRoom(newRoomIndex);
+            }
+        }
+    }
+
+    changeRoom(roomIndex?: number) {
+        if (this.sceneIndex === undefined) {
+            return;
+        }
+        const roomCount = this.ctx.roomCount(this.sceneIndex);
+        if (roomIndex !== undefined && roomIndex >= roomCount) {
+            roomIndex = roomCount - 1;
+        }
+
+        this.roomIndex = roomIndex;
+        document.getElementById('room')!.textContent =
+            roomIndex === undefined ? 'All Rooms' : 'Room ' + roomIndex;
+        this.prevRoomButton.disabled = roomIndex === undefined;
+        this.nextRoomButton.disabled = roomIndex === roomCount - 1;
+        this.exploreButton.textContent = roomIndex === undefined ? 'Explore Scene' : 'Explore Room';
+        this.exploreButton.disabled = false;
+        updateUrlFragment({ sceneIndex: this.sceneIndex, roomIndex: this.roomIndex });
     }
 
     updateDimensions(): [number, number] {

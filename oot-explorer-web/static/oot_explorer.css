@@ -117,6 +117,23 @@ body {
   user-select: none;
 }
 
+#prev-scene,
+#prev-room {
+  margin-right: 0;
+}
+
+#next-scene,
+#next-room {
+  margin-left: 0;
+}
+
+#scene,
+#room {
+  margin: 0;
+  flex-basis: 80px;
+  text-align: center;
+}
+
 #container {
   position: relative;
   background-color: var(--dark-overlay);
@@ -234,6 +251,10 @@ button:active {
 button:active {
   background-color: var(--dark-overlay);
 }
+button:disabled {
+  color: #00000061;
+  cursor: auto;
+}
 
 button.small {
   height: 32px;
@@ -245,6 +266,9 @@ button.small {
 }
 button.small:hover {
   background-color: var(--dark-overlay);
+}
+button.small:hover:disabled {
+  background-color: #fff;
 }
 
 .button-row {

@@ -187,6 +187,30 @@ impl Context {
         oot_ntsc_10::SCENE_TABLE_COUNT as u32
     }
 
+    #[wasm_bindgen(js_name = roomCount)]
+    pub fn room_count(&self, scene_index: usize) -> u32 {
+        let inner = self.inner.lock().unwrap_throw();
+        let file_table = inner.file_table.as_ref().unwrap_throw();
+        let vrom = inner.vrom.as_ref().unwrap_throw().borrow();
+
+        let scene_table_entry = oot_ntsc_10::get_scene_table(file_table)
+            .unwrap_throw()
+            .iter(vrom)
+            .nth(scene_index)
+            .unwrap_throw()
+            .unwrap_throw();
+        let scene = scene_table_entry.scene(vrom).unwrap_throw().into_inner();
+
+        scene
+            .headers(vrom)
+            .find_map(|header| match header.unwrap_throw().variant(vrom) {
+                SceneHeaderVariant::RoomList(room_list) => Some(room_list),
+                _ => None,
+            })
+            .unwrap_throw()
+            .room_count(vrom) as u32
+    }
+
     #[wasm_bindgen(js_name = getTexture)]
     pub fn get_texture(&self, key: u32) -> Option<WebGlTexture> {
         self.inner

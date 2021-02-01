@@ -62,6 +62,7 @@ compile_interfaces! {
 
     #[layout(size = 8, align_bits = 2)]
     struct RoomListHeader {
+        u8 room_count @1;
         struct RoomListEntry[u8 @1]* room_list @4;
     }
 

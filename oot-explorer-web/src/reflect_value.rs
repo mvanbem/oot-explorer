@@ -3,7 +3,7 @@ use oot_explorer_reflect::{PrimitiveType, StructFieldLocation, TypeDescriptor};
 use oot_explorer_segment::{SegmentAddr, SegmentTable};
 use oot_explorer_vrom::{Vrom, VromAddr};
 use serde::Serialize;
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 use std::ops::Range;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsValue, UnwrapThrowExt};
@@ -329,8 +329,8 @@ fn field_value_string(
                     PrimitiveType::I16 => fetch_and_display::<i16>(vrom, field_addr),
                     PrimitiveType::U32 => fetch_and_display::<u32>(vrom, field_addr),
                     PrimitiveType::I32 => fetch_and_display::<i32>(vrom, field_addr),
-                    PrimitiveType::VromAddr => Ok(None),
-                    PrimitiveType::SegmentAddr => Ok(None),
+                    PrimitiveType::VromAddr => fetch_and_debug::<VromAddr>(vrom, field_addr),
+                    PrimitiveType::SegmentAddr => fetch_and_debug::<SegmentAddr>(vrom, field_addr),
                 },
 
                 TypeDescriptor::Pointer(pointer_desc) => {
@@ -393,6 +393,16 @@ where
 {
     match T::from_vrom(vrom, addr) {
         Ok(value) => Ok(Some(format!("{}", value))),
+        Err(_) => Err(format!("(inaccessible)")),
+    }
+}
+
+fn fetch_and_debug<T>(vrom: Vrom<'_>, addr: VromAddr) -> Result<Option<String>, String>
+where
+    T: Debug + FromVrom + Layout,
+{
+    match T::from_vrom(vrom, addr) {
+        Ok(value) => Ok(Some(format!("{:?}", value))),
         Err(_) => Err(format!("(inaccessible)")),
     }
 }

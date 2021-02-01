@@ -30,6 +30,16 @@ module.exports = {
         new WasmPackPlugin({
             crateDirectory: path.resolve(__dirname),
             forceMode: 'production',
+            watchDirectories: [
+                path.resolve(__dirname, '../oot-explorer-expr'),
+                path.resolve(__dirname, '../oot-explorer-game-data'),
+                path.resolve(__dirname, '../oot-explorer-gl'),
+                path.resolve(__dirname, '../oot-explorer-read'),
+                path.resolve(__dirname, '../oot-explorer-reflect'),
+                path.resolve(__dirname, '../oot-explorer-rom'),
+                path.resolve(__dirname, '../oot-explorer-segment'),
+                path.resolve(__dirname, '../oot-explorer-vrom'),
+            ],
         }),
     ],
 };

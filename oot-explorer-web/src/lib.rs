@@ -24,7 +24,9 @@ use web_sys::{WebGl2RenderingContext, WebGlSampler, WebGlTexture};
 #[macro_use]
 mod macros;
 
-mod explore;
+mod hexdump;
+mod reflect_root;
+mod reflect_value;
 mod sampler_cache;
 mod texture_cache;
 

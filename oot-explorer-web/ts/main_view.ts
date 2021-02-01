@@ -4,10 +4,11 @@ import type * as wasm from '../pkg';
 import { Container } from './container';
 import { $t } from './dollar_t';
 import { ExploreView } from './explore_view';
-import { Status } from './status';
-import { WasmInterface, WasmModule } from './wasm';
 import { glInitProgram, glInitShader } from './gl_util';
+import { Status } from './status';
+import { Toolbar } from './toolbar';
 import { WindowManager } from './window_manager';
+import { WasmInterface, WasmModule } from './wasm';
 
 const BACKGROUND_VERTEX_SHADER_SOURCE = `#version 300 es
 
@@ -84,7 +85,7 @@ function parseUrlFragment() {
         };
     }
     return {
-        sceneIndex: parseInt(matches[1], 10) - 1,
+        sceneIndex: parseInt(matches[1], 10),
     };
 }
 
@@ -94,7 +95,7 @@ interface UpdateUrlFragmentParams {
 
 function updateUrlFragment({ sceneIndex }: UpdateUrlFragmentParams) {
     let url = new URL(window.location.toString());
-    url.hash = '#scene=' + (sceneIndex + 1);
+    url.hash = '#scene=' + sceneIndex;
     window.location.replace(url.toString());
 }
 
@@ -165,6 +166,8 @@ export class MainView {
     prevTimestamp?: number;
 
     constructor({ wasm, rom }: MainViewCtorArgs) {
+        Toolbar.show();
+
         this.canvas = $t('canvas');
         let gl = this.gl = this.canvas.getContext(
             'webgl2', {
@@ -175,9 +178,12 @@ export class MainView {
         })!;
 
         document.getElementById('explore')!.addEventListener('click', () => {
-            let exploreView = new ExploreView(wasm, this.ctx);
-            this.canvas.parentElement!.appendChild(exploreView.element);
-            WindowManager.add(exploreView);
+            if (this.sceneIndex !== undefined) {
+                let root = wasm.ReflectRoot.forScene(this.ctx, this.sceneIndex);
+                let exploreView = new ExploreView(wasm, this.ctx, root);
+                this.canvas.parentElement!.appendChild(exploreView.element);
+                WindowManager.add(exploreView);
+            }
         });
 
         this.canvas.addEventListener('mousedown', e => {
@@ -316,8 +322,7 @@ export class MainView {
     async changeScene(sceneIndex: number) {
         let gl = this.gl;
         this.sceneIndex = sceneIndex;
-        document.getElementById('scene')!.textContent =
-            'Scene: ' + (sceneIndex + 1) + '/' + this.ctx.sceneCount;
+        document.getElementById('scene')!.textContent = 'Scene ' + sceneIndex;
         updateUrlFragment({ sceneIndex });
 
         Status.show('Processing scene...');

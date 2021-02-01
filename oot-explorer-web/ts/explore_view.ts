@@ -27,19 +27,19 @@ export class ExploreView extends WMWindow {
     private highlight?: Highlight;
     private refreshMarkingsScheduled: boolean = false;
 
-    constructor(wasm: WasmModule, ctx: Wasm.Context) {
+    constructor(wasm: WasmModule, ctx: Wasm.Context, root: Wasm.ReflectRoot) {
         // TODO: Don't hard-code the title.
-        super({ title: 'Explore Current Scene', width: 464 });
+        super({ title: 'Explore ' + root.description, width: 464 });
 
         this.hexdumpContainer = $t('div', { className: 'explore-view-hexdump' });
         this.element.appendChild(this.hexdumpContainer);
         this.hexdumpContainer.addEventListener('scroll', () => this.hexdump.regenerateChildren());
 
-        this.hexdump = new wasm.HexDumpView(document, ctx);
+        this.hexdump = new wasm.HexDumpView(document, ctx, root);
         this.hexdumpContainer.appendChild(this.hexdump.element);
         window.requestAnimationFrame(() => this.hexdump.regenerateChildren());
 
-        this.reflect = new ReflectView(wasm, ctx);
+        this.reflect = new ReflectView(wasm, ctx, root);
         this.element.appendChild(this.reflect.element);
         this.reflect.onsethighlight = (start, end) => {
             this.highlight = { start, end };

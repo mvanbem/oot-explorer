@@ -35,8 +35,9 @@ export class ItemView {
 
     constructor(
         private readonly ctx: Wasm.Context,
-        private readonly oddNesting: boolean,
+        private readonly root: Wasm.ReflectRoot,
         reflect: Wasm.ReflectResult,
+        private readonly oddNesting: boolean,
     ) {
         this.oddNesting = oddNesting;
 
@@ -143,7 +144,7 @@ export class ItemView {
     private expandImpl() {
         for (let field of this.fields) {
             let fieldView = new ItemView(
-                this.ctx, !this.oddNesting, field.reflect_within_deku_tree_scene(this.ctx));
+                this.ctx, this.root, field.reflect(this.ctx, this.root), !this.oddNesting);
             this.contents!.appendChild(fieldView.element);
             fieldView.onsethighlight = (start, end) => {
                 if (this.onsethighlight) {

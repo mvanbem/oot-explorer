@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use oot_explorer_read::{is_end, ReadError, Sentinel};
 use oot_explorer_reflect::{
     RangeSourced, BOOL_DESC, I16_DESC, U16_DESC, U32_DESC, U8_DESC, VROM_ADDR_DESC,
@@ -182,7 +184,11 @@ impl Sentinel for SceneHeader {
 }
 
 impl RoomListEntry {
+    pub fn room_range(self, vrom: Vrom<'_>) -> Range<VromAddr> {
+        self.start(vrom)..self.end(vrom)
+    }
+
     pub fn room(self, vrom: Vrom<'_>) -> Result<RangeSourced<Room>, ReadError> {
-        RangeSourced::from_vrom_range(vrom, self.start(vrom)..self.end(vrom))
+        RangeSourced::from_vrom_range(vrom, self.room_range(vrom))
     }
 }

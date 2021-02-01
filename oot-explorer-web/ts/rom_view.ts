@@ -3,6 +3,7 @@ import { $t, $text } from './dollar_t';
 import { MainView } from './main_view';
 import { RomStorage } from './rom_storage';
 import { Status } from './status';
+import { Toolbar } from './toolbar';
 import { wasmPromise } from './wasm';
 
 export class RomView {
@@ -13,6 +14,7 @@ export class RomView {
     storeButton: HTMLButtonElement;
 
     constructor() {
+        Toolbar.hide();
         Status.hide();
         this.element = $t('div', {
             className: 'rom-view',

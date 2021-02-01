@@ -1,5 +1,3 @@
-use oot_explorer_game_data::versions::oot_ntsc_10;
-use oot_explorer_read::VromProxy;
 use oot_explorer_vrom::VromAddr;
 use std::fmt::Write;
 use std::ops::Range;
@@ -10,6 +8,7 @@ use web_sys::{
     Document, HtmlElement, ScrollBehavior, ScrollIntoViewOptions, ScrollLogicalPosition,
 };
 
+use crate::reflect_root::ReflectRoot;
 use crate::{Context, InnerContext};
 
 const ROW_HEIGHT: u32 = 14;
@@ -38,70 +37,46 @@ impl Marking {
 #[wasm_bindgen]
 pub struct HexDumpView {
     document: Document,
-    _ctx: Arc<Mutex<InnerContext>>,
+    ctx: Arc<Mutex<InnerContext>>,
+    root: ReflectRoot,
     element: HtmlElement,
-    markings: Vec<(Marking, Range<VromAddr>)>,
-    base_addr: VromAddr,
-    data: Box<[u8]>,
     rows: Vec<(Range<VromAddr>, HtmlElement)>,
+    markings: Vec<(Marking, Range<VromAddr>)>,
 }
 
 #[wasm_bindgen]
 impl HexDumpView {
     #[wasm_bindgen(constructor)]
-    pub fn new(document: &Document, ctx: &Context) -> HexDumpView {
+    pub fn new(document: &Document, ctx: &Context, root: &ReflectRoot) -> HexDumpView {
         let element = html_template!(document,
             return div[class="hexdump"] {}
         );
 
-        // TODO: Remove this arbitrary choice!
+        // The root element's contents are ephemeral and follow the scroll position, so set a fixed
+        // height.
+        let row_count = (root.vrom_range.end - root.vrom_range.start + 15) / 16 * ROW_HEIGHT;
         element
             .style()
-            .set_property("height", "48846px")
+            .set_property("height", &format!("{}px", row_count))
             .unwrap_throw();
-
-        // TODO: Remove this arbitrary choice. Make the caller provide data and a base address.
-        let ref_ctx = ctx.inner.lock().unwrap_throw();
-        let vrom = ref_ctx.vrom.as_ref().unwrap_throw().borrow();
-        let (base_addr, data) = {
-            let scene_table =
-                oot_ntsc_10::get_scene_table(ref_ctx.file_table.as_ref().unwrap_throw())
-                    .unwrap_throw();
-            let scene = scene_table
-                .iter(vrom)
-                .next()
-                .unwrap_throw()
-                .unwrap_throw()
-                .scene(vrom)
-                .unwrap_throw();
-            let base_addr = scene.addr();
-            // TODO: Don't save the data, just use the address to index into the context's VROM!
-            let data = vrom
-                .slice(scene.vrom_range())
-                .unwrap_throw()
-                .to_owned()
-                .into_boxed_slice();
-            (base_addr, data)
-        };
-
-        // for offset in (0..0x0000da10).step_by(0x10) {
-        //     let row = make_row(document, &data[offset as usize..], base_addr + offset, None);
-        //     element.append_child(&row).unwrap_throw();
-        // }
 
         HexDumpView {
             document: document.clone(),
-            _ctx: Arc::clone(&ctx.inner),
+            ctx: Arc::clone(&ctx.inner),
+            root: root.clone(),
             element,
-            markings: vec![],
-            base_addr,
-            data,
             rows: vec![],
+            markings: vec![],
         }
     }
 
     #[wasm_bindgen(js_name = regenerateChildren)]
     pub fn regenerate_children(&mut self) {
+        // Get a reference to the data.
+        let ctx = self.ctx.lock().unwrap_throw();
+        let vrom = ctx.vrom.as_ref().unwrap_throw().borrow();
+        let data = vrom.slice(self.root.vrom_range.clone()).unwrap_throw();
+
         // Compute the current viewport.
         let parent = self.element.parent_element().unwrap_throw();
         let viewport = {
@@ -128,10 +103,10 @@ impl HexDumpView {
             let row_bottom = row_top + ROW_HEIGHT;
 
             let offset = row_index * 16;
-            let addr = self.base_addr + offset;
-            let data = match self.data.get(offset as usize..) {
+            let addr = self.root.vrom_range.start + offset;
+            let data = match data.get(offset as usize..) {
                 Some(data) => data,
-                None => &[],
+                None => continue,
             };
 
             let row = make_row(&self.document, data, addr, &self.markings);
@@ -186,7 +161,7 @@ impl HexDumpView {
 
         // No hits. The target element must be out of the viewport. Construct a temporary fake row
         // and scroll to it.
-        let row_top = (addr - self.base_addr) / 16 * ROW_HEIGHT;
+        let row_top = (addr - self.root.vrom_range.start) / 16 * ROW_HEIGHT;
         let fake_row = html_template!(&self.document, return div[class="hexdump-row"] {});
         self.element.append_child(&fake_row).unwrap_throw();
         fake_row
@@ -213,6 +188,8 @@ fn make_row(
 
     // Start with the address.
     let mut text = format!("{:08x}", addr.0);
+
+    // This function flushes `text` into the DOM, applying styles for marking as needed.
     let flush = |text: &mut String, marking| {
         if !text.is_empty() {
             match marking {

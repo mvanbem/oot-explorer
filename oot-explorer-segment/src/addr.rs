@@ -26,6 +26,10 @@ impl SegmentAddr {
         self.0 & 0x00ff_ffff
     }
 
+    pub fn is_null(self) -> bool {
+        self.0 == 0
+    }
+
     pub fn non_null(self) -> Option<SegmentAddr> {
         if self.0 == 0 {
             None

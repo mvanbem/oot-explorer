@@ -1,8 +1,6 @@
-use oot_explorer_game_data::scene::SCENE_DESC;
-use oot_explorer_game_data::versions::oot_ntsc_10;
-use oot_explorer_read::{FromVrom, Layout, VromProxy};
+use oot_explorer_read::{FromVrom, Layout};
 use oot_explorer_reflect::{PrimitiveType, StructFieldLocation, TypeDescriptor};
-use oot_explorer_segment::{Segment, SegmentAddr, SegmentTable};
+use oot_explorer_segment::{SegmentAddr, SegmentTable};
 use oot_explorer_vrom::{Vrom, VromAddr};
 use serde::Serialize;
 use std::fmt::Display;
@@ -10,6 +8,7 @@ use std::ops::Range;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsValue, UnwrapThrowExt};
 
+use crate::reflect_root::ReflectRoot;
 use crate::Context;
 
 #[wasm_bindgen]
@@ -58,25 +57,13 @@ pub struct ReflectFieldInfo {
 
 #[wasm_bindgen]
 impl ReflectFieldInfo {
-    pub fn reflect_within_deku_tree_scene(&self, ctx: &Context) -> ReflectResult {
+    pub fn reflect(&self, ctx: &Context, root: &ReflectRoot) -> ReflectResult {
         let ctx_ref = ctx.inner.lock().unwrap_throw();
         let vrom = ctx_ref.vrom.as_ref().unwrap_throw().borrow();
 
-        let scene_table =
-            oot_ntsc_10::get_scene_table(ctx_ref.file_table.as_ref().unwrap_throw()).unwrap_throw();
-        let scene = scene_table
-            .iter(vrom)
-            .next()
-            .unwrap_throw()
-            .unwrap_throw()
-            .scene(vrom)
-            .unwrap_throw()
-            .into_inner();
-        let segment_table = SegmentTable::new().with(Segment::SCENE, scene.addr());
-
         reflect_field(
             vrom,
-            &segment_table,
+            &root.segment_table,
             self.base_addr,
             self.name.clone(),
             &self.location,
@@ -85,39 +72,9 @@ impl ReflectFieldInfo {
     }
 }
 
-#[wasm_bindgen]
-#[allow(dead_code)]
-pub fn reflect_inside_the_deku_tree_scene(ctx: &Context) -> ReflectResult {
-    // TODO: This is very hard-coded. Don't do this.
-
-    let ctx_ref = ctx.inner.lock().unwrap_throw();
-    let vrom = ctx_ref.vrom.as_ref().unwrap_throw().borrow();
-
-    let scene_table =
-        oot_ntsc_10::get_scene_table(ctx_ref.file_table.as_ref().unwrap_throw()).unwrap_throw();
-    let scene = scene_table
-        .iter(vrom)
-        .next()
-        .unwrap_throw()
-        .unwrap_throw()
-        .scene(vrom)
-        .unwrap_throw()
-        .into_inner();
-    let segment_ctx = SegmentTable::new().with(Segment::SCENE, scene.addr());
-
-    reflect_field(
-        vrom,
-        &segment_ctx,
-        scene.addr(),
-        None,
-        &StructFieldLocation::Simple { offset: 0 },
-        SCENE_DESC,
-    )
-}
-
-fn reflect_field(
+pub fn reflect_field(
     vrom: Vrom<'_>,
-    segment_ctx: &SegmentTable,
+    segment_table: &SegmentTable,
     base_addr: VromAddr,
     field_name: Option<String>,
     location: &StructFieldLocation,
@@ -132,8 +89,8 @@ fn reflect_field(
         };
 
     let vrom_range = get_field_vrom_range(base_addr, &location, desc);
-    let value_string = field_value_string(vrom, segment_ctx, base_addr, &location, desc);
-    let contents = contents(vrom, segment_ctx, base_addr, &location, desc);
+    let value_string = field_value_string(vrom, segment_table, base_addr, &location, desc);
+    let contents = contents(vrom, segment_table, base_addr, &location, desc);
 
     ReflectResult {
         info: ReflectItemInfo {
@@ -148,9 +105,9 @@ fn reflect_field(
     }
 }
 
-pub fn contents(
+fn contents(
     vrom: Vrom<'_>,
-    segment_ctx: &SegmentTable,
+    segment_table: &SegmentTable,
     base_addr: VromAddr,
     location: &StructFieldLocation,
     desc: TypeDescriptor,
@@ -161,7 +118,7 @@ pub fn contents(
             let mut field_infos = vec![];
             add_field_infos_for_fields(
                 vrom,
-                segment_ctx,
+                segment_table,
                 desc,
                 base_addr + *offset,
                 &mut field_infos,
@@ -184,10 +141,16 @@ pub fn contents(
             let ptr_addr = base_addr + *ptr_offset;
             let segment_ptr =
                 SegmentAddr::from_vrom(vrom, ptr_addr).expect("not ready to make this robust yet");
+            if segment_ptr.is_null() {
+                return vec![];
+            }
 
-            let mut vrom_ptr = segment_ctx
-                .resolve(segment_ptr)
-                .expect("not ready to make this robust yet");
+            // Resolve the segment address. If it's unmapped, we have no contents. The slice field's
+            // one-line value should display the error message.
+            let mut vrom_ptr = match segment_table.resolve(segment_ptr) {
+                Ok(vrom_ptr) => vrom_ptr,
+                Err(_) => return vec![],
+            };
 
             // Add a field for each value in the slice.
             let mut field_infos = vec![];
@@ -260,7 +223,7 @@ fn get_field_vrom_range(
 
 fn add_field_infos_for_fields(
     vrom: Vrom<'_>,
-    segment_ctx: &SegmentTable,
+    segment_table: &SegmentTable,
     desc: TypeDescriptor,
     addr: VromAddr,
     field_infos: &mut Vec<ReflectFieldInfo>,
@@ -301,7 +264,7 @@ fn add_field_infos_for_fields(
                 .binary_search_by_key(&discriminant, |&(x, _)| x)
             {
                 let variant_desc = union_desc.variants[index].1;
-                add_field_infos_for_fields(vrom, segment_ctx, variant_desc, addr, field_infos);
+                add_field_infos_for_fields(vrom, segment_table, variant_desc, addr, field_infos);
             }
         }
 
@@ -312,7 +275,7 @@ fn add_field_infos_for_fields(
                 Ok(segment_ptr) => segment_ptr,
                 Err(_) => return,
             };
-            let vrom_ptr = match segment_ctx.resolve(segment_ptr) {
+            let vrom_ptr = match segment_table.resolve(segment_ptr) {
                 Ok(vrom_ptr) => vrom_ptr,
                 Err(_) => return,
             };
@@ -333,7 +296,7 @@ fn add_field_infos_for_fields(
 
 fn field_value_string(
     vrom: Vrom<'_>,
-    _segment_ctx: &SegmentTable,
+    _segment_table: &SegmentTable,
     base_addr: VromAddr,
     location: &StructFieldLocation,
     desc: TypeDescriptor,
@@ -382,7 +345,7 @@ fn field_value_string(
                 TypeDescriptor::Union(union_desc) => {
                     let discriminant_value = field_value_string(
                         vrom,
-                        _segment_ctx,
+                        _segment_table,
                         base_addr + union_desc.discriminant_offset,
                         &StructFieldLocation::Simple { offset: 0 },
                         union_desc.discriminant_desc,

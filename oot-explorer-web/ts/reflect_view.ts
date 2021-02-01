@@ -15,11 +15,11 @@ export class ReflectView {
     onselect?: SelectCallback;
 
     // TODO: addr, desc parameters? Or should roots be retrieve from wasm endpoints?
-    constructor(wasm: WasmModule, ctx: Wasm.Context) {
+    constructor(wasm: WasmModule, ctx: Wasm.Context, root: Wasm.ReflectRoot) {
         this.element = $t('div', { className: 'explore-view-tree' });
 
         this.element.appendChild((this.rootItem =
-            new ItemView(ctx, false, wasm.reflect_inside_the_deku_tree_scene(ctx))).element);
+            new ItemView(ctx, root, root.reflect(ctx), false)).element);
         this.rootItem.onsethighlight = (start, end) => {
             if (this.onsethighlight) {
                 this.onsethighlight(start, end);

@@ -64,6 +64,7 @@ export class WMWindow {
                 resizeHandle = $t('div', { className: 'window-resize-handle' }),
             ]
         });
+        this.element.addEventListener('mousedown', e => this.handleElementMouseDown(e));
         resizeHandle.addEventListener('mousedown', e => this.handleResizeHandleMouseDown(e));
 
         if (title !== undefined) {
@@ -146,6 +147,17 @@ export class WMWindow {
         }
     }
 
+    handleElementMouseDown(e: MouseEvent) {
+        let parent = this.element.parentElement!;
+        if (this.element !== parent.lastChild) {
+            // Move to the top of the window stack. Note that this interferes with other event
+            // handlers, so the first click will only raise the window.
+            this.onBeforeReattach();
+            parent.insertBefore(this.element, null);
+            this.onAfterReattach();
+        }
+    }
+
     handleTitleMouseDown(e: MouseEvent) {
         e.preventDefault();
 
@@ -153,11 +165,6 @@ export class WMWindow {
             offsetX: this.x - e.clientX,
             offsetY: this.y - e.clientY,
         };
-
-        // Move to the top of the window stack.
-        let parent = this.element.parentElement!;
-        parent.removeChild(this.element);
-        parent.appendChild(this.element);
 
         // Attach the global mouse event handlers.
         document.addEventListener('mousemove', this.titleGlobalMouseMoveHandler);
@@ -187,13 +194,6 @@ export class WMWindow {
             offsetX: this.width - e.clientX,
             offsetY: this.height - e.clientY,
         };
-
-        // Move to the top of the window stack.
-        let parent = this.element.parentElement!;
-        this.onBeforeReattach();
-        parent.removeChild(this.element);
-        this.onAfterReattach();
-        parent.appendChild(this.element);
 
         // Attach the global mouse event handlers.
         document.addEventListener('mousemove', this.resizeHandleGlobalMouseMoveHandler);
